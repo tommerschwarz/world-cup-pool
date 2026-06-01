@@ -112,7 +112,7 @@ function AdminContent() {
         />
       )}
       {tab === 'users' && (
-        <UsersTab scores={scores} authFetch={authFetch} setStatus={setStatus} />
+        <UsersTab users={allPreds} scores={scores} authFetch={authFetch} setStatus={setStatus} />
       )}
       {tab === 'picks' && bracket && (
         <ManualPicksTab bracket={bracket} users={allPreds} authFetch={authFetch} setStatus={setStatus} />
@@ -334,29 +334,35 @@ function GroupResultsTab({
 // ---------------------------------------------------------------------------
 
 function UsersTab({
-  scores, authFetch, setStatus,
+  users, scores, authFetch, setStatus,
 }: {
+  users: UserPredictions[];
   scores: UserScore[];
   authFetch: (url: string, body: object) => Promise<unknown>;
   setStatus: (s: string) => void;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
+  const scoreMap = Object.fromEntries(scores.map(s => [s.uid, s]));
 
-  const toggle = async (score: UserScore) => {
-    setSaving(score.uid);
+  const toggle = async (uid: string, displayName: string, current: boolean) => {
+    setSaving(uid);
     try {
       await authFetch('/api/admin/users', {
-        uid:   score.uid,
+        uid,
         field: 'prizeEligible',
-        value: !score.prizeEligible,
+        value: !current,
       });
-      setStatus(`✓ Updated ${score.displayName}`);
+      setStatus(`✓ Updated ${displayName}`);
     } catch (e: unknown) {
       setStatus(`✗ ${e instanceof Error ? e.message : 'Error'}`);
     } finally {
       setSaving(null);
     }
   };
+
+  const sorted = [...users].sort((a, b) =>
+    (scoreMap[b.uid]?.total ?? 0) - (scoreMap[a.uid]?.total ?? 0)
+  );
 
   return (
     <div className="bg-white rounded-2xl border border-sky-100 overflow-hidden">
@@ -369,29 +375,35 @@ function UsersTab({
           </tr>
         </thead>
         <tbody className="divide-y divide-sky-100/50">
-          {[...scores].sort((a, b) => b.total - a.total).map(s => (
-            <tr key={s.uid} className="hover:bg-sky-50/50">
-              <td className="px-4 py-3 text-slate-700">
-                <div>{s.displayName || '—'}</div>
-                <div className="text-xs text-slate-400">{s.email}</div>
-              </td>
-              <td className="px-4 py-3 text-right font-mono text-slate-800">{s.total}</td>
-              <td className="px-4 py-3 text-center">
-                <button
-                  disabled={saving === s.uid}
-                  onClick={() => toggle(s)}
-                  className={`w-10 h-6 rounded-full transition-colors relative ${
-                    s.prizeEligible ? 'bg-sky-500' : 'bg-sky-50'
-                  } disabled:opacity-50`}
-                >
-                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                    s.prizeEligible ? 'translate-x-4' : 'translate-x-0.5'
-                  }`} />
-                </button>
-              </td>
-            </tr>
-          ))}
-          {scores.length === 0 && (
+          {sorted.map(u => {
+            const score        = scoreMap[u.uid];
+            const prizeEligible = score?.prizeEligible ?? false;
+            return (
+              <tr key={u.uid} className="hover:bg-sky-50/50">
+                <td className="px-4 py-3 text-slate-700">
+                  <div>{u.displayName || '—'}</div>
+                  <div className="text-xs text-slate-400">{u.email}</div>
+                </td>
+                <td className="px-4 py-3 text-right font-mono text-slate-800">
+                  {score?.total ?? <span className="text-slate-400 text-xs">—</span>}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <button
+                    disabled={saving === u.uid}
+                    onClick={() => toggle(u.uid, u.displayName, prizeEligible)}
+                    className={`w-10 h-6 rounded-full transition-colors relative ${
+                      prizeEligible ? 'bg-sky-500' : 'bg-sky-50'
+                    } disabled:opacity-50`}
+                  >
+                    <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                      prizeEligible ? 'translate-x-4' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+          {users.length === 0 && (
             <tr>
               <td colSpan={3} className="px-4 py-8 text-center text-slate-400">No users yet.</td>
             </tr>
