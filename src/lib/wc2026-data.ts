@@ -114,21 +114,22 @@ export const STAGE_LABELS: Record<string, string> = {
   FINAL: 'Final',
 };
 
-// Group stage locks when the first match of the group kicks off.
-// These are approximate UTC times — update with official FIFA schedule.
+// All group picks lock at tournament kickoff — Jun 11 12:00 PM PDT (19:00 UTC).
+// The 5-min buffer in isGroupLocked means the UI locks at 11:55 AM PDT.
+const TOURNAMENT_KICKOFF = '2026-06-11T19:00:00Z';
 export const GROUP_LOCK_TIMES: Record<string, string> = {
-  A: '2026-06-11T20:00:00Z',
-  B: '2026-06-12T17:00:00Z',
-  C: '2026-06-12T20:00:00Z',
-  D: '2026-06-12T23:00:00Z',
-  E: '2026-06-13T17:00:00Z',
-  F: '2026-06-13T20:00:00Z',
-  G: '2026-06-13T23:00:00Z',
-  H: '2026-06-14T17:00:00Z',
-  I: '2026-06-14T20:00:00Z',
-  J: '2026-06-14T23:00:00Z',
-  K: '2026-06-15T17:00:00Z',
-  L: '2026-06-15T20:00:00Z',
+  A: TOURNAMENT_KICKOFF,
+  B: TOURNAMENT_KICKOFF,
+  C: TOURNAMENT_KICKOFF,
+  D: TOURNAMENT_KICKOFF,
+  E: TOURNAMENT_KICKOFF,
+  F: TOURNAMENT_KICKOFF,
+  G: TOURNAMENT_KICKOFF,
+  H: TOURNAMENT_KICKOFF,
+  I: TOURNAMENT_KICKOFF,
+  J: TOURNAMENT_KICKOFF,
+  K: TOURNAMENT_KICKOFF,
+  L: TOURNAMENT_KICKOFF,
 };
 
 export function isGroupLocked(group: string): boolean {
