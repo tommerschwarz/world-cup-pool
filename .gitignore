@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# environment variables — NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# debug logs
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# TypeScript
+tsconfig.tsbuildinfo

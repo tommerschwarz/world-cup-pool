@@ -1,0 +1,566 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { collection, onSnapshot, doc } from 'firebase/firestore';
+import { getClientDb } from '@/lib/firebase';
+import { useAuth } from '@/contexts/AuthContext';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { calculateScore, SCORING } from '@/lib/scoring';
+import { GROUPS, getGroupTeams } from '@/lib/wc2026-data';
+import type {
+  UserScore, UserPredictions, BracketConfig,
+  LeaderboardEntry, SimulatedGroupResult, GroupPrediction,
+} from '@/lib/types';
+
+export default function LeaderboardPage() {
+  return (
+    <ProtectedRoute>
+      <LeaderboardContent />
+    </ProtectedRoute>
+  );
+}
+
+function LeaderboardContent() {
+  const { user } = useAuth();
+  const [tab, setTab]                 = useState<'standings' | 'picks' | 'whatif'>('standings');
+  const [scores, setScores]           = useState<UserScore[]>([]);
+  const [allPredictions, setAllPreds] = useState<UserPredictions[]>([]);
+  const [bracket, setBracket]         = useState<BracketConfig | null>(null);
+
+  useEffect(() => {
+    return onSnapshot(collection(getClientDb(), 'scores'), snap => {
+      setScores(snap.docs.map(d => d.data() as UserScore));
+    });
+  }, []);
+
+  useEffect(() => {
+    return onSnapshot(collection(getClientDb(), 'predictions'), snap => {
+      setAllPreds(snap.docs.map(d => d.data() as UserPredictions));
+    });
+  }, []);
+
+  useEffect(() => {
+    return onSnapshot(doc(getClientDb(), 'bracket', 'config'), snap => {
+      if (snap.exists()) setBracket(snap.data() as BracketConfig);
+    });
+  }, []);
+
+  const tabs = [
+    { key: 'standings', label: 'Standings'    },
+    { key: 'picks',     label: "Pool's Picks" },
+    { key: 'whatif',    label: 'What If?'     },
+  ] as const;
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      <h1 className="text-2xl font-bold text-slate-800 mb-6">Leaderboard</h1>
+
+      <div className="flex gap-1 bg-white rounded-xl p-1 w-fit mb-8">
+        {tabs.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
+              tab === key
+                ? 'bg-sky-500 text-white shadow'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'standings' && (
+        <StandingsTab scores={scores} currentUid={user?.uid ?? ''} />
+      )}
+      {tab === 'picks' && bracket && (
+        <PoolPicksTab bracket={bracket} predictions={allPredictions} scores={scores} />
+      )}
+      {tab === 'whatif' && bracket && (
+        <WhatIfTab bracket={bracket} predictions={allPredictions} scores={scores} />
+      )}
+      {!bracket && tab !== 'standings' && (
+        <div className="flex items-center justify-center h-40 text-slate-400">Loading…</div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Standings
+// ---------------------------------------------------------------------------
+
+function StandingsTab({ scores, currentUid }: { scores: UserScore[]; currentUid: string }) {
+  const sorted = [...scores].sort((a, b) => b.total - a.total);
+
+  return (
+    <div className="bg-white rounded-2xl border border-sky-100 overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-slate-400 text-left border-b border-sky-100">
+            <th className="px-4 py-3 w-10">#</th>
+            <th className="px-4 py-3">Player</th>
+            <th className="px-4 py-3 text-right">Points</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-sky-100/50">
+          {sorted.length === 0 && (
+            <tr>
+              <td colSpan={3} className="px-4 py-8 text-center text-slate-400">
+                No scores yet — check back after matches start.
+              </td>
+            </tr>
+          )}
+          {sorted.map((s, i) => {
+            const isMe = s.uid === currentUid;
+            return (
+              <tr key={s.uid} className={`transition-colors ${isMe ? 'bg-sky-50' : 'hover:bg-sky-50/60'}`}>
+                <td className="px-4 py-3 text-slate-400 font-mono tabular-nums">{i + 1}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`font-medium ${isMe ? 'text-sky-500' : 'text-slate-700'}`}>
+                      {s.displayName || s.email}
+                    </span>
+                    {s.prizeEligible && <span title="Prize eligible">🏆</span>}
+                    {isMe && <span className="text-xs text-slate-400">(you)</span>}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right font-bold font-mono tabular-nums text-slate-800">{s.total}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pool's Picks — rows = groups, columns = users
+// ---------------------------------------------------------------------------
+
+const MAX_GROUP_PTS = SCORING.ADVANCE_PTS * 2 + SCORING.TOP_SEED_PTS; // 8
+
+function groupScorePct(u: UserPredictions, group: string, bracket: BracketConfig): number | null {
+  const result = bracket.groupResults?.[group];
+  if (!result) return null;
+  const pred = u.groupPredictions?.[group];
+  if (!pred) return 0;
+  const actualAdvancers = new Set(result.finalStandings.slice(0, 2));
+  const actualTop = result.finalStandings[0];
+  let pts = 0;
+  for (const id of pred.advancingTeamIds) {
+    if (actualAdvancers.has(id)) pts += SCORING.ADVANCE_PTS;
+  }
+  if (pred.topSeedId === actualTop) pts += SCORING.TOP_SEED_PTS;
+  return pts / MAX_GROUP_PTS;
+}
+
+// Interpolate between two RGB triples
+function lerpColor(a: [number,number,number], b: [number,number,number], t: number): string {
+  const r = Math.round(a[0] + (b[0] - a[0]) * t);
+  const g = Math.round(a[1] + (b[1] - a[1]) * t);
+  const bv = Math.round(a[2] + (b[2] - a[2]) * t);
+  return `rgb(${r},${g},${bv})`;
+}
+
+function heatBg(pct: number, dog: boolean): string {
+  const white: [number,number,number] = [255, 255, 255];
+  // standard: red-300 → white → green-300
+  // dog:      blue-300 → white → amber-300
+  const bad:  [number,number,number] = dog ? [147, 197, 253] : [252, 165, 165];
+  const good: [number,number,number] = dog ? [252, 211,  77] : [134, 239, 172];
+  if (pct <= 0.5) return lerpColor(bad,  white, pct * 2);
+  return               lerpColor(white, good, (pct - 0.5) * 2);
+}
+
+function PoolPicksTab({
+  bracket, predictions, scores,
+}: {
+  bracket: BracketConfig;
+  predictions: UserPredictions[];
+  scores: UserScore[];
+}) {
+  const [heatmap, setHeatmap] = useState(false);
+  const [dogMode, setDogMode] = useState(false);
+
+  const scoreMap = Object.fromEntries(scores.map(s => [s.uid, s.total]));
+  const users    = [...predictions].sort((a, b) => (scoreMap[b.uid] ?? 0) - (scoreMap[a.uid] ?? 0));
+
+  const legendSteps = [0, 0.25, 0.5, 0.75, 1];
+
+  return (
+    <div>
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <span className="text-xs text-slate-400 mr-1">View:</span>
+        <ToggleChip active={heatmap} onClick={() => setHeatmap(h => !h)} label="🌡 Heatmap" />
+        <ToggleChip active={dogMode} onClick={() => setDogMode(d => !d)} label="🐕 Dog mode" />
+
+        {heatmap && (
+          <div className="flex items-center gap-1.5 ml-3 pl-3 border-l border-sky-100">
+            <span className="text-xs text-slate-400">
+              {dogMode ? '(blue)' : '(red)'} 0 pts
+            </span>
+            {legendSteps.map(pct => (
+              <span
+                key={pct}
+                className="w-5 h-5 rounded border border-white/60 inline-block"
+                style={{ backgroundColor: heatBg(pct, dogMode) }}
+                title={`${Math.round(pct * MAX_GROUP_PTS)} / ${MAX_GROUP_PTS} pts`}
+              />
+            ))}
+            <span className="text-xs text-slate-400">
+              {MAX_GROUP_PTS} pts {dogMode ? '(amber)' : '(green)'}
+            </span>
+          </div>
+        )}
+
+        {dogMode && !heatmap && (
+          <span className="text-xs text-slate-400 ml-1 pl-3 border-l border-sky-100">
+            <span className="inline-block w-3 h-3 rounded-sm bg-blue-500/20 border border-blue-300 mr-1 align-middle" />correct&nbsp;&nbsp;
+            <span className="inline-block w-3 h-3 rounded-sm bg-amber-400/25 border border-amber-300 mr-1 align-middle" />wrong
+          </span>
+        )}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-sky-100 overflow-auto">
+        <table className="text-xs min-w-max">
+          <thead>
+            <tr className="border-b border-sky-100">
+              <th className="sticky left-0 z-10 bg-white px-4 py-3 text-left text-slate-400 min-w-24">
+                Group
+              </th>
+              {users.map(u => (
+                <th key={u.uid} className="px-3 py-3 text-center text-slate-500 whitespace-nowrap font-normal min-w-28">
+                  {u.displayName?.split(' ')[0] || u.email.split('@')[0]}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-sky-100/30">
+            {GROUPS.map(group => {
+              const result          = bracket.groupResults?.[group];
+              const actualAdvancers = result ? new Set(result.finalStandings.slice(0, 2)) : null;
+              const actualTop       = result ? result.finalStandings[0] : null;
+
+              return (
+                <tr key={group} className="hover:bg-sky-50/50">
+                  <td className="sticky left-0 z-10 bg-white px-4 py-3 font-semibold text-slate-600">
+                    Group {group}
+                  </td>
+                  {users.map(u => {
+                    const pred = u.groupPredictions?.[group];
+                    const pct  = heatmap ? groupScorePct(u, group, bracket) : null;
+                    return (
+                      <td
+                        key={u.uid}
+                        className={`text-center transition-colors ${heatmap ? 'p-0' : 'px-2 py-2 align-top'}`}
+                        style={pct !== null ? { backgroundColor: heatBg(pct, dogMode) } : undefined}
+                      >
+                        {heatmap
+                          ? <div className="w-20 h-10" />
+                          : <GroupPickCell
+                              pred={pred}
+                              bracket={bracket}
+                              actualAdvancers={actualAdvancers}
+                              actualTopSeed={actualTop}
+                              dogMode={dogMode}
+                            />
+                        }
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ToggleChip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+        active
+          ? 'bg-slate-700 text-white border-slate-700'
+          : 'bg-white text-slate-500 border-sky-200 hover:border-slate-400 hover:text-slate-700'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function GroupPickCell({
+  pred, bracket, actualAdvancers, actualTopSeed, dogMode,
+}: {
+  pred?: GroupPrediction;
+  bracket: BracketConfig;
+  actualAdvancers: Set<string> | null;
+  actualTopSeed: string | null;
+  dogMode: boolean;
+}) {
+  if (!pred || pred.advancingTeamIds.length === 0) {
+    return <span className="text-slate-400">—</span>;
+  }
+
+  // color classes keyed by mode
+  const correctCls = dogMode ? 'bg-blue-500/20 text-blue-700'   : 'bg-green-500/15 text-green-700';
+  const wrongCls   = dogMode ? 'bg-amber-400/25 text-amber-700' : 'bg-red-500/15 text-red-600';
+  const neutralCls = 'bg-sky-50/70 text-slate-600';
+  const topOkCls   = dogMode ? 'text-blue-600'   : 'text-green-500';
+  const topBadCls  = dogMode ? 'text-amber-600'  : 'text-red-500';
+  const topNeutCls = 'text-sky-500';
+
+  return (
+    <div className="space-y-0.5">
+      {pred.advancingTeamIds.map(id => {
+        const team = bracket.teams[id];
+        if (!team) return null;
+        const isCorrect  = actualAdvancers ? actualAdvancers.has(id) : null;
+        const isTop      = pred.topSeedId === id;
+        const topCorrect = isTop && actualTopSeed ? actualTopSeed === id : null;
+
+        return (
+          <div key={id} className={`flex items-center gap-1 px-1.5 py-0.5 rounded whitespace-nowrap ${
+            isCorrect === true  ? correctCls :
+            isCorrect === false ? wrongCls   : neutralCls
+          }`}>
+            <span>{team.flagEmoji}</span>
+            <span>{team.shortName}</span>
+            {isTop && (
+              <span className={`text-xs font-bold ml-0.5 ${
+                topCorrect === true  ? topOkCls  :
+                topCorrect === false ? topBadCls : topNeutCls
+              }`}>①</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// What If? simulator
+// ---------------------------------------------------------------------------
+
+function WhatIfTab({
+  bracket, predictions, scores,
+}: {
+  bracket: BracketConfig;
+  predictions: UserPredictions[];
+  scores: UserScore[];
+}) {
+  const [simResults, setSimResults] = useState<Record<string, SimulatedGroupResult>>({});
+
+  // Groups without official results yet
+  const openGroups = GROUPS.filter(g => !bracket.groupResults?.[g]);
+
+  const projectedBracket: BracketConfig = {
+    ...bracket,
+    groupResults: {
+      ...(bracket.groupResults ?? {}),
+      ...Object.fromEntries(
+        Object.entries(simResults).map(([g, sim]) => [g, {
+          finalStandings: sim.topSeedId
+            ? [sim.topSeedId, ...sim.advancingTeamIds.filter(id => id !== sim.topSeedId)]
+            : [...sim.advancingTeamIds],
+        }])
+      ),
+    },
+  };
+
+  const projected: LeaderboardEntry[] = predictions.map(up => {
+    const { total } = calculateScore(up, projectedBracket);
+    return {
+      uid:           up.uid,
+      displayName:   up.displayName,
+      email:         up.email,
+      total,
+      rank:          0,
+      prizeEligible: scores.find(s => s.uid === up.uid)?.prizeEligible ?? false,
+    };
+  }).sort((a, b) => b.total - a.total).map((e, i) => ({ ...e, rank: i + 1 }));
+
+  const currentRank = Object.fromEntries(
+    [...scores].sort((a, b) => b.total - a.total).map((s, i) => [s.uid, i + 1])
+  );
+
+  const simCount = Object.keys(simResults).length;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {/* Left — group simulators */}
+      <div>
+        <h2 className="text-base font-semibold text-slate-600 mb-4">Simulate group outcomes</h2>
+        {openGroups.length === 0 && (
+          <p className="text-slate-400 text-sm">All group results are in — nothing to simulate.</p>
+        )}
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+          {openGroups.map(group => (
+            <SimGroupRow
+              key={group}
+              group={group}
+              teams={getGroupTeams(bracket.teams, group)}
+              value={simResults[group]}
+              onChange={sim => {
+                if (!sim) {
+                  setSimResults(prev => { const n = { ...prev }; delete n[group]; return n; });
+                } else {
+                  setSimResults(prev => ({ ...prev, [group]: sim }));
+                }
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Right — projected standings */}
+      <div>
+        <h2 className="text-base font-semibold text-slate-600 mb-4">
+          Projected standings
+          {simCount > 0 && (
+            <span className="ml-2 text-xs text-sky-500 font-normal">
+              ({simCount} group{simCount !== 1 ? 's' : ''} simulated)
+            </span>
+          )}
+        </h2>
+        <div className="bg-white rounded-2xl border border-sky-100 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-slate-400 text-left border-b border-sky-100">
+                <th className="px-4 py-3 w-10">#</th>
+                <th className="px-4 py-3">Player</th>
+                <th className="px-4 py-3 text-right">Pts</th>
+                <th className="px-4 py-3 w-10 text-center">Δ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-sky-100/50">
+              {projected.map(e => {
+                const prev  = currentRank[e.uid] ?? projected.length;
+                const delta = prev - e.rank;
+                return (
+                  <tr key={e.uid} className="hover:bg-sky-50/50">
+                    <td className="px-4 py-2.5 text-slate-400 font-mono tabular-nums">{e.rank}</td>
+                    <td className="px-4 py-2.5 text-slate-700">
+                      {e.displayName || e.email}
+                      {e.prizeEligible && <span className="ml-1">🏆</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-bold font-mono tabular-nums text-slate-800">
+                      {e.total}
+                    </td>
+                    <td className="px-4 py-2.5 text-center text-xs font-medium">
+                      {delta > 0 && <span className="text-green-400">▲{delta}</span>}
+                      {delta < 0 && <span className="text-red-400">▼{Math.abs(delta)}</span>}
+                      {delta === 0 && <span className="text-slate-400">–</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {projected.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-6 text-center text-slate-400 text-sm">
+                    No picks submitted yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {simCount > 0 && (
+          <button
+            onClick={() => setSimResults({})}
+            className="mt-3 text-xs text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            ✕ Clear all
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SimGroupRow({
+  group, teams, value, onChange,
+}: {
+  group: string;
+  teams: ReturnType<typeof getGroupTeams>;
+  value?: SimulatedGroupResult;
+  onChange: (sim: SimulatedGroupResult | null) => void;
+}) {
+  const [advancing, setAdvancing] = useState<string[]>(value?.advancingTeamIds ?? []);
+  const [topSeed, setTopSeed]     = useState<string>(value?.topSeedId ?? '');
+
+  const emit = (adv: string[], top: string) => {
+    if (!adv.length) { onChange(null); return; }
+    onChange({ group, advancingTeamIds: adv, topSeedId: top || null });
+  };
+
+  const toggleAdv = (id: string) => {
+    let next: string[];
+    if (advancing.includes(id)) {
+      next = advancing.filter(x => x !== id);
+      const nextTop = next.includes(topSeed) ? topSeed : '';
+      setAdvancing(next); setTopSeed(nextTop); emit(next, nextTop);
+    } else if (advancing.length < 2) {
+      next = [...advancing, id];
+      setAdvancing(next); emit(next, topSeed);
+    }
+  };
+
+  const toggleTop = (id: string) => {
+    if (!advancing.includes(id)) return;
+    const next = topSeed === id ? '' : id;
+    setTopSeed(next); emit(advancing, next);
+  };
+
+  return (
+    <div className="bg-white border border-sky-100 rounded-xl p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-sky-600">Group {group}</span>
+        {value && (
+          <button
+            onClick={() => { setAdvancing([]); setTopSeed(''); onChange(null); }}
+            className="text-slate-400 hover:text-slate-500 text-xs"
+          >✕ clear</button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {teams.map(team => {
+          const isAdv = advancing.includes(team.id);
+          const isTop = topSeed === team.id;
+          return (
+            <div key={team.id} className="flex items-center gap-1">
+              <button
+                onClick={() => toggleAdv(team.id)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  isAdv
+                    ? 'bg-sky-100 text-sky-600 border border-sky-300'
+                    : 'bg-sky-50 text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <span>{team.flagEmoji}</span>
+                <span>{team.shortName}</span>
+              </button>
+              {isAdv && (
+                <button
+                  onClick={() => toggleTop(team.id)}
+                  className={`w-6 h-6 rounded text-xs font-bold transition-colors ${
+                    isTop ? 'bg-sky-500 text-white' : 'bg-sky-50 text-slate-400 hover:text-slate-600'
+                  }`}
+                >①</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
