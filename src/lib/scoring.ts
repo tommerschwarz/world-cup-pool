@@ -33,10 +33,10 @@ export const SCORING = {
     FINAL: 32,  //  1 match  × 32 = 32
   } as Partial<Record<Stage, number>>,
 
-  // Pre-tournament podium picks
-  CHAMPION_PTS:    15,
-  RUNNER_UP_PTS:    8,
-  THIRD_PLACE_PTS:  4,
+  // Pre-tournament top-3 picks (unordered) — points by actual finishing position
+  TOP3_FIRST_PTS:  15,  // one of your picks finishes 1st
+  TOP3_SECOND_PTS:  8,  // one of your picks finishes 2nd
+  TOP3_THIRD_PTS:   4,  // one of your picks finishes 3rd
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -151,17 +151,17 @@ export function calculateScore(
     : null;
   const thirdPlace = thirdMatch?.result?.winnerId ?? null;
 
-  // Any of your 3 picks that finish anywhere in the actual top 3 earns points.
-  // Points per slot reflect how bold the pick was (champion > runner-up > 3rd).
-  const actualTop3 = new Set([champion, runnerUp, thirdPlace].filter(Boolean) as string[]);
-  const top3       = predictions.topThreePredictions;
+  // User picks any 3 teams (unordered). Points are awarded based on actual finish:
+  //   1st place match → TOP3_FIRST_PTS, 2nd → TOP3_SECOND_PTS, 3rd → TOP3_THIRD_PTS
+  const top3    = predictions.topThreePredictions;
+  const userSet = new Set([top3?.pick1, top3?.pick2, top3?.pick3].filter(Boolean) as string[]);
   const top3Result: Record<string, number> = {};
   let top3Pts = 0;
 
-  if (top3 && actualTop3.size > 0) {
-    if (top3.champion   && actualTop3.has(top3.champion))   { top3Result.champion   = SCORING.CHAMPION_PTS;    top3Pts += SCORING.CHAMPION_PTS;    }
-    if (top3.runnerUp   && actualTop3.has(top3.runnerUp))   { top3Result.runnerUp   = SCORING.RUNNER_UP_PTS;   top3Pts += SCORING.RUNNER_UP_PTS;   }
-    if (top3.thirdPlace && actualTop3.has(top3.thirdPlace)) { top3Result.thirdPlace = SCORING.THIRD_PLACE_PTS; top3Pts += SCORING.THIRD_PLACE_PTS; }
+  if (top3 && userSet.size > 0) {
+    if (champion   && userSet.has(champion))   { top3Result.first  = SCORING.TOP3_FIRST_PTS;  top3Pts += SCORING.TOP3_FIRST_PTS;  }
+    if (runnerUp   && userSet.has(runnerUp))   { top3Result.second = SCORING.TOP3_SECOND_PTS; top3Pts += SCORING.TOP3_SECOND_PTS; }
+    if (thirdPlace && userSet.has(thirdPlace)) { top3Result.third  = SCORING.TOP3_THIRD_PTS;  top3Pts += SCORING.TOP3_THIRD_PTS;  }
   }
 
   if (Object.keys(top3Result).length > 0) {

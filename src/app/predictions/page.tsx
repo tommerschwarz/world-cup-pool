@@ -23,7 +23,7 @@ function PredictionsContent() {
   const [bracket, setBracket]             = useState<BracketConfig | null>(null);
   const [groupPreds, setGroupPreds]       = useState<Record<string, GroupPrediction>>({});
   const [usaMatchPreds, setUsaMatchPreds] = useState<Record<string, UsaOutcome | null>>({});
-  const [topThreePreds, setTopThreePreds] = useState<TopThreePrediction>({ champion: null, runnerUp: null, thirdPlace: null });
+  const [topThreePreds, setTopThreePreds] = useState<TopThreePrediction>({ pick1: null, pick2: null, pick3: null });
   const [saving, setSaving]               = useState<Record<string, boolean>>({});
   const [savedAt, setSavedAt]             = useState<Record<string, number>>({});
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -446,11 +446,7 @@ function UsaMatchCard({
 // Top-3 podium picks
 // ---------------------------------------------------------------------------
 
-const PODIUM_SLOTS: { key: keyof TopThreePrediction; label: string; medal: string; pts: number }[] = [
-  { key: 'champion',   label: 'Champion',   medal: '🥇', pts: SCORING.CHAMPION_PTS    },
-  { key: 'runnerUp',   label: 'Runner-up',  medal: '🥈', pts: SCORING.RUNNER_UP_PTS   },
-  { key: 'thirdPlace', label: '3rd Place',  medal: '🥉', pts: SCORING.THIRD_PLACE_PTS },
-];
+const TOP3_PICK_KEYS: (keyof TopThreePrediction)[] = ['pick1', 'pick2', 'pick3'];
 
 function TopThreeSection({
   teams, prediction, saving, justSaved, onChange,
@@ -463,14 +459,17 @@ function TopThreeSection({
 }) {
   const locked    = isTournamentLocked();
   const allTeams  = Object.values(teams).sort((a, b) => a.name.localeCompare(b.name));
-  const completed = !!(prediction.champion && prediction.runnerUp && prediction.thirdPlace);
+  const completed = TOP3_PICK_KEYS.every(k => !!prediction[k]);
+
+  // Teams already picked in other slots — exclude from each dropdown
+  const pickedIds = new Set(TOP3_PICK_KEYS.map(k => prediction[k]).filter(Boolean) as string[]);
 
   return (
     <div className={`bg-white rounded-2xl border p-4 transition-colors ${
       completed ? 'border-sky-200' : 'border-sky-100'
     }`}>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-xs text-slate-400">Locks when the tournament kicks off — bonus on top of bracket picks</p>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-slate-400">Order doesn't matter — points based on actual finishing position</p>
         <div className="text-xs">
           {saving     && <span className="text-slate-400">saving…</span>}
           {!saving && justSaved && <span className="text-green-500">✓</span>}
@@ -479,16 +478,20 @@ function TopThreeSection({
         </div>
       </div>
 
+      {/* Points key */}
+      <div className="flex gap-4 mb-4 text-xs text-slate-500">
+        <span>🥇 1st → <span className="text-sky-600 font-medium">+{SCORING.TOP3_FIRST_PTS}</span></span>
+        <span>🥈 2nd → <span className="text-sky-600 font-medium">+{SCORING.TOP3_SECOND_PTS}</span></span>
+        <span>🥉 3rd → <span className="text-sky-600 font-medium">+{SCORING.TOP3_THIRD_PTS}</span></span>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {PODIUM_SLOTS.map(({ key, label, medal, pts }) => {
+        {TOP3_PICK_KEYS.map((key, i) => {
           const value = prediction[key];
           const team  = value ? teams[value] : null;
           return (
             <div key={key}>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm font-medium text-slate-600">{medal} {label}</span>
-                <span className="text-xs text-sky-500 font-medium">+{pts} pts</span>
-              </div>
+              <div className="mb-1.5 text-xs font-medium text-slate-400">Pick {i + 1}</div>
               <div className="relative">
                 <select
                   disabled={locked}
@@ -498,7 +501,7 @@ function TopThreeSection({
                 >
                   <option value="">— pick a team —</option>
                   {allTeams.map(t => (
-                    <option key={t.id} value={t.id}>
+                    <option key={t.id} value={t.id} disabled={pickedIds.has(t.id) && t.id !== value}>
                       {t.flagEmoji} {t.name}
                     </option>
                   ))}

@@ -102,31 +102,31 @@ export default function RulesPage() {
           <section className="bg-white rounded-2xl p-6 border border-sky-100">
             <h2 className="text-lg font-semibold text-sky-500 mb-1">Tournament Podium</h2>
             <p className="text-sm text-slate-400 mb-4">
-              Pre-tournament picks — bonus on top of your bracket picks. Max {SCORING.CHAMPION_PTS + SCORING.RUNNER_UP_PTS + SCORING.THIRD_PLACE_PTS} pts
+              Pre-tournament picks — bonus on top of your bracket picks. Max {SCORING.TOP3_FIRST_PTS + SCORING.TOP3_SECOND_PTS + SCORING.TOP3_THIRD_PTS} pts
             </p>
             <p className="text-sm text-slate-600 mb-4 leading-relaxed">
-              Each pick earns points if that team finishes <em>anywhere</em> in the top 3 —
-              e.g. your champion pick gets 3rd place, you still earn {SCORING.CHAMPION_PTS} pts.
+              Pick any 3 teams you think will finish in the top 3 — order doesn't matter.
+              Earn points for each one based on where they actually finish.
             </p>
             <table className="w-full text-sm text-slate-600">
               <thead>
                 <tr className="text-left text-slate-400 border-b border-sky-100">
-                  <th className="pb-2 font-medium">Slot</th>
-                  <th className="pb-2 font-medium text-right">Points if in top 3</th>
+                  <th className="pb-2 font-medium">If one of your picks finishes…</th>
+                  <th className="pb-2 font-medium text-right">Points</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-sky-50">
                 <tr>
-                  <td className="py-2">🥇 Champion pick</td>
-                  <td className="py-2 text-right font-mono text-sky-600">+{SCORING.CHAMPION_PTS}</td>
+                  <td className="py-2">🥇 1st place</td>
+                  <td className="py-2 text-right font-mono text-sky-600">+{SCORING.TOP3_FIRST_PTS}</td>
                 </tr>
                 <tr>
-                  <td className="py-2">🥈 Runner-up pick</td>
-                  <td className="py-2 text-right font-mono text-sky-600">+{SCORING.RUNNER_UP_PTS}</td>
+                  <td className="py-2">🥈 2nd place</td>
+                  <td className="py-2 text-right font-mono text-sky-600">+{SCORING.TOP3_SECOND_PTS}</td>
                 </tr>
                 <tr>
-                  <td className="py-2">🥉 3rd-place pick</td>
-                  <td className="py-2 text-right font-mono text-sky-600">+{SCORING.THIRD_PLACE_PTS}</td>
+                  <td className="py-2">🥉 3rd place</td>
+                  <td className="py-2 text-right font-mono text-sky-600">+{SCORING.TOP3_THIRD_PTS}</td>
                 </tr>
               </tbody>
             </table>
@@ -142,7 +142,7 @@ export default function RulesPage() {
                   ['Group stage (top-seed bonus)',   SCORING.TOP_SEED_PTS * 12],
                   ['USA pool play (all-or-nothing)', SCORING.USA_ALL_CORRECT_PTS],
                   ['Knockout rounds',               SCORING.ROUND_TOTAL_PTS * 5 + SCORING.KNOCKOUT_PER_MATCH['3RD']!],
-                  ['Tournament podium bonus',       SCORING.CHAMPION_PTS + SCORING.RUNNER_UP_PTS + SCORING.THIRD_PLACE_PTS],
+                  ['Tournament podium bonus',       SCORING.TOP3_FIRST_PTS + SCORING.TOP3_SECOND_PTS + SCORING.TOP3_THIRD_PTS],
                 ].map(([label, pts]) => (
                   <tr key={label as string}>
                     <td className="py-2">{label}</td>
@@ -152,7 +152,7 @@ export default function RulesPage() {
                 <tr className="border-t-2 border-sky-300">
                   <td className="pt-3 font-bold text-white">Total</td>
                   <td className="pt-3 text-right font-mono font-bold text-white text-base">
-                    {SCORING.ADVANCE_PTS * 24 + SCORING.TOP_SEED_PTS * 12 + SCORING.USA_ALL_CORRECT_PTS + SCORING.ROUND_TOTAL_PTS * 5 + SCORING.KNOCKOUT_PER_MATCH['3RD']! + SCORING.CHAMPION_PTS + SCORING.RUNNER_UP_PTS + SCORING.THIRD_PLACE_PTS}
+                    {SCORING.ADVANCE_PTS * 24 + SCORING.TOP_SEED_PTS * 12 + SCORING.USA_ALL_CORRECT_PTS + SCORING.ROUND_TOTAL_PTS * 5 + SCORING.KNOCKOUT_PER_MATCH['3RD']! + SCORING.TOP3_FIRST_PTS + SCORING.TOP3_SECOND_PTS + SCORING.TOP3_THIRD_PTS}
                   </td>
                 </tr>
               </tbody>

@@ -56,10 +56,11 @@ export interface GroupPrediction {
   topSeedId: string | null;
 }
 
+// Unordered — user picks any 3 teams; points awarded based on actual finish position
 export interface TopThreePrediction {
-  champion:   string | null;
-  runnerUp:   string | null;
-  thirdPlace: string | null;
+  pick1: string | null;
+  pick2: string | null;
+  pick3: string | null;
 }
 
 export interface UserPredictions {
