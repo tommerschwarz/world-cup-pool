@@ -4,6 +4,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import {
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut as fbSignOut,
   type User,
 } from 'firebase/auth';
@@ -31,6 +33,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const auth = getClientAuth();
+    // Pick up the result if we're returning from a redirect sign-in
+    getRedirectResult(auth).catch(() => {});
     return onAuthStateChanged(auth, u => {
       setUser(u);
       setLoading(false);
@@ -38,7 +42,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async () => {
-    await signInWithPopup(getClientAuth(), googleProvider);
+    const auth = getClientAuth();
+    // Mobile browsers block popups — use redirect flow instead
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      await signInWithRedirect(auth, googleProvider);
+    } else {
+      await signInWithPopup(auth, googleProvider);
+    }
   };
 
   const signOut = async () => {
