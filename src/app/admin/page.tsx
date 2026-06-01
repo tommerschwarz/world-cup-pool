@@ -333,6 +333,17 @@ function GroupResultsTab({
 // Users tab
 // ---------------------------------------------------------------------------
 
+function pickCompletion(u: UserPredictions) {
+  const groups = GROUPS.filter(g => {
+    const p = u.groupPredictions?.[g];
+    return p && p.advancingTeamIds.length === 2 && p.topSeedId;
+  }).length;
+  const usa  = USA_MATCHES.filter(m => u.usaMatchPredictions?.[m.id] != null).length;
+  const top3 = [u.topThreePredictions?.pick1, u.topThreePredictions?.pick2, u.topThreePredictions?.pick3]
+    .filter(Boolean).length;
+  return { groups, usa, top3 };
+}
+
 function UsersTab({
   users, scores, authFetch, setStatus,
 }: {
@@ -370,19 +381,35 @@ function UsersTab({
         <thead>
           <tr className="text-left text-slate-400 border-b border-sky-100">
             <th className="px-4 py-3">Player</th>
+            <th className="px-4 py-3">Picks</th>
             <th className="px-4 py-3 text-right">Points</th>
             <th className="px-4 py-3 text-center">Prize eligible</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-sky-100/50">
           {sorted.map(u => {
-            const score        = scoreMap[u.uid];
+            const score         = scoreMap[u.uid];
             const prizeEligible = score?.prizeEligible ?? false;
+            const cp            = pickCompletion(u);
+            const allDone       = cp.groups === 12 && cp.usa === 3 && cp.top3 === 3;
             return (
               <tr key={u.uid} className="hover:bg-sky-50/50">
                 <td className="px-4 py-3 text-slate-700">
                   <div>{u.displayName || '—'}</div>
                   <div className="text-xs text-slate-400">{u.email}</div>
+                </td>
+                <td className="px-4 py-3">
+                  <div className={`text-xs space-y-0.5 ${allDone ? 'text-green-600' : 'text-slate-500'}`}>
+                    <div className={cp.groups === 12 ? 'text-green-600' : 'text-amber-500'}>
+                      Groups {cp.groups}/12
+                    </div>
+                    <div className={cp.usa === 3 ? 'text-green-600' : 'text-amber-500'}>
+                      USA {cp.usa}/3
+                    </div>
+                    <div className={cp.top3 === 3 ? 'text-green-600' : 'text-amber-500'}>
+                      Top 3: {cp.top3}/3
+                    </div>
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-slate-800">
                   {score?.total ?? <span className="text-slate-400 text-xs">—</span>}
@@ -405,7 +432,7 @@ function UsersTab({
           })}
           {users.length === 0 && (
             <tr>
-              <td colSpan={3} className="px-4 py-8 text-center text-slate-400">No users yet.</td>
+              <td colSpan={4} className="px-4 py-8 text-center text-slate-400">No users yet.</td>
             </tr>
           )}
         </tbody>
