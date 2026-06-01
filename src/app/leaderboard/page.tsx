@@ -6,7 +6,7 @@ import { getClientDb } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { calculateScore, SCORING } from '@/lib/scoring';
-import { GROUPS, getGroupTeams } from '@/lib/wc2026-data';
+import { GROUPS, getGroupTeams, isTournamentLocked } from '@/lib/wc2026-data';
 import type {
   UserScore, UserPredictions, BracketConfig,
   LeaderboardEntry, SimulatedGroupResult, GroupPrediction,
@@ -74,15 +74,32 @@ function LeaderboardContent() {
       {tab === 'standings' && (
         <StandingsTab scores={scores} currentUid={user?.uid ?? ''} />
       )}
-      {tab === 'picks' && bracket && (
+      {(tab === 'picks' || tab === 'whatif') && !isTournamentLocked() && (
+        <PicksHidden />
+      )}
+      {tab === 'picks' && bracket && isTournamentLocked() && (
         <PoolPicksTab bracket={bracket} predictions={allPredictions} scores={scores} />
       )}
-      {tab === 'whatif' && bracket && (
+      {tab === 'whatif' && bracket && isTournamentLocked() && (
         <WhatIfTab bracket={bracket} predictions={allPredictions} scores={scores} />
       )}
-      {!bracket && tab !== 'standings' && (
+      {!bracket && tab !== 'standings' && isTournamentLocked() && (
         <div className="flex items-center justify-center h-40 text-slate-400">Loading…</div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pre-tournament picks lockout
+// ---------------------------------------------------------------------------
+
+function PicksHidden() {
+  return (
+    <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
+      <span className="text-3xl">🔒</span>
+      <p className="text-slate-600 font-medium">Picks are hidden until the tournament begins</p>
+      <p className="text-slate-400 text-sm">Revealed on Jun 11 at 12 PM PDT</p>
     </div>
   );
 }
