@@ -139,6 +139,8 @@ function PredictionsContent() {
     const p = groupPreds[g];
     return p && p.advancingTeamIds.length === 2 && p.topSeedId;
   }).length;
+  const filledUsa  = USA_MATCHES.filter(m => usaMatchPreds[m.id] != null).length;
+  const filledTop3 = [topThreePreds.pick1, topThreePreds.pick2, topThreePreds.pick3].filter(Boolean).length;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
@@ -151,7 +153,7 @@ function PredictionsContent() {
       </div>
 
       {/* Sticky progress bar */}
-      <ProgressBar filled={filledGroups} total={GROUPS.length} />
+      <ProgressBar filledGroups={filledGroups} filledUsa={filledUsa} filledTop3={filledTop3} />
 
       <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {GROUPS.map(group => (
@@ -211,20 +213,47 @@ function PredictionsContent() {
 // Progress bar
 // ---------------------------------------------------------------------------
 
-function ProgressBar({ filled, total }: { filled: number; total: number }) {
-  const pct = total === 0 ? 0 : Math.round((filled / total) * 100);
+function ProgressBar({ filledGroups, filledUsa, filledTop3 }: {
+  filledGroups: number;
+  filledUsa: number;
+  filledTop3: number;
+}) {
+  const total  = GROUPS.length + 3 + 3; // 18
+  const filled = filledGroups + filledUsa + filledTop3;
+  const pct    = Math.round((filled / total) * 100);
+  const allDone = filled === total;
+
   return (
-    <div className="sticky top-14 z-40 bg-sky-50/95 backdrop-blur pt-2 pb-3 -mx-4 px-4 border-b border-sky-100">
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-sm text-slate-500">Groups completed</span>
-        <span className="text-sm font-semibold text-slate-700">{filled} / {total}</span>
-      </div>
-      <div className="h-2 bg-sky-50 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-sky-500 rounded-full transition-all duration-500"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+    <div className="sticky top-[91px] sm:top-14 z-40 bg-sky-50/95 backdrop-blur pt-2 pb-3 -mx-4 px-4 border-b border-sky-100">
+      {allDone ? (
+        <div className="flex items-center gap-2 py-0.5">
+          <span className="text-green-500">✓</span>
+          <span className="text-sm font-medium text-green-700">All picks saved — you're good to go!</span>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex gap-3 text-xs text-slate-500">
+              <span className={filledGroups === 12 ? 'text-green-600 font-medium' : ''}>
+                Groups {filledGroups}/12
+              </span>
+              <span className={filledUsa === 3 ? 'text-green-600 font-medium' : ''}>
+                USA {filledUsa}/3
+              </span>
+              <span className={filledTop3 === 3 ? 'text-green-600 font-medium' : ''}>
+                Podium {filledTop3}/3
+              </span>
+            </div>
+            <span className="text-sm font-semibold text-slate-700">{filled} / {total}</span>
+          </div>
+          <div className="h-2 bg-sky-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-sky-500 rounded-full transition-all duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
