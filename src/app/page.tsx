@@ -31,17 +31,22 @@ export default function LandingPage() {
           across all 104 matches of the tournament.
         </p>
 
-        <button
-          onClick={signIn}
-          disabled={loading}
-          className="inline-flex items-center gap-3 px-8 py-4 bg-white text-slate-800 font-semibold rounded-xl hover:bg-sky-50 active:scale-95 transition-all shadow-lg disabled:opacity-50"
-        >
-          <GoogleIcon />
-          Sign in with Google
-        </button>
+        {loading ? (
+          <div className="flex items-center justify-center py-4">
+            <div className="w-7 h-7 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <button
+            onClick={signIn}
+            className="inline-flex items-center gap-3 px-8 py-4 bg-white text-slate-800 font-semibold rounded-xl hover:bg-sky-50 active:scale-95 transition-all shadow-lg"
+          >
+            <GoogleIcon />
+            Sign in with Google
+          </button>
+        )}
 
         <p className="mt-6 text-sm text-slate-400">
-          Invite-only — you need a Google account that has been shared the link.
+          Sign in with any Google account to join the pool.
         </p>
       </div>
     </div>
