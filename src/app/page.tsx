@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 export default function LandingPage() {
-  const { user, loading, signIn } = useAuth();
+  const { user, loading, signIn, authError } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -43,6 +43,12 @@ export default function LandingPage() {
             <GoogleIcon />
             Sign in with Google
           </button>
+        )}
+
+        {authError && (
+          <p className="mt-4 text-sm text-red-500 bg-red-50 rounded-lg px-4 py-2 max-w-sm mx-auto">
+            {authError}
+          </p>
         )}
 
         <p className="mt-6 text-sm text-slate-400">

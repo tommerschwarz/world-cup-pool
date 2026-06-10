@@ -3,7 +3,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import {
   onAuthStateChanged,
-  signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   signOut as fbSignOut,
@@ -18,6 +17,7 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
   isAdmin: boolean;
+  authError: string | null;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -28,29 +28,40 @@ const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? '')
   .filter(Boolean);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser]       = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser]         = useState<User | null>(null);
+  const [loading, setLoading]   = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     const auth = getClientAuth();
-    // Pick up the result if we're returning from a redirect sign-in
-    getRedirectResult(auth).catch(() => {});
+
+    // Must call getRedirectResult to complete a redirect sign-in before
+    // onAuthStateChanged fires with the final state.
+    getRedirectResult(auth)
+      .then(result => {
+        if (result?.user) setUser(result.user);
+      })
+      .catch((err: unknown) => {
+        const code = err && typeof err === 'object' && 'code' in err
+          ? (err as { code: string }).code
+          : 'unknown';
+        if (code === 'auth/unauthorized-domain') {
+          setAuthError('This domain is not authorized in Firebase — add it to Authentication → Settings → Authorized Domains.');
+        }
+        console.error('[Auth] getRedirectResult error:', code, err);
+      });
+
     return onAuthStateChanged(auth, u => {
       setUser(u);
       setLoading(false);
     });
   }, []);
 
+  // Use redirect for all platforms — most reliable on mobile (iOS Safari/Chrome)
+  // where popups either get blocked or behave as full-page navigations.
   const signIn = async () => {
-    const auth = getClientAuth();
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (err: unknown) {
-      // Only fall back to redirect if the browser explicitly blocked the popup
-      if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'auth/popup-blocked') {
-        await signInWithRedirect(auth, googleProvider);
-      }
-    }
+    setAuthError(null);
+    await signInWithRedirect(getClientAuth(), googleProvider);
   };
 
   const signOut = async () => {
@@ -65,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAdmin = ADMIN_EMAILS.includes((user?.email ?? '').toLowerCase());
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut, getIdToken, isAdmin }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signOut, getIdToken, isAdmin, authError }}>
       {children}
     </AuthContext.Provider>
   );
