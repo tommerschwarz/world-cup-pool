@@ -355,14 +355,10 @@ function UsersTab({
   const [saving, setSaving] = useState<string | null>(null);
   const scoreMap = Object.fromEntries(scores.map(s => [s.uid, s]));
 
-  const toggle = async (uid: string, displayName: string, current: boolean) => {
-    setSaving(uid);
+  const toggle = async (uid: string, displayName: string, field: 'prizeEligible' | 'paidBuyIn', current: boolean) => {
+    setSaving(`${uid}:${field}`);
     try {
-      await authFetch('/api/admin/users', {
-        uid,
-        field: 'prizeEligible',
-        value: !current,
-      });
+      await authFetch('/api/admin/users', { uid, field, value: !current });
       setStatus(`✓ Updated ${displayName}`);
     } catch (e: unknown) {
       setStatus(`✗ ${e instanceof Error ? e.message : 'Error'}`);
@@ -383,6 +379,7 @@ function UsersTab({
             <th className="px-4 py-3">Player</th>
             <th className="px-4 py-3">Picks</th>
             <th className="px-4 py-3 text-right">Points</th>
+            <th className="px-4 py-3 text-center">Paid</th>
             <th className="px-4 py-3 text-center">Prize eligible</th>
           </tr>
         </thead>
@@ -390,6 +387,7 @@ function UsersTab({
           {sorted.map(u => {
             const score         = scoreMap[u.uid];
             const prizeEligible = score?.prizeEligible ?? false;
+            const paidBuyIn     = score?.paidBuyIn ?? false;
             const cp            = pickCompletion(u);
             const allDone       = cp.groups === 12 && cp.usa === 3 && cp.top3 === 3;
             return (
@@ -416,10 +414,23 @@ function UsersTab({
                 </td>
                 <td className="px-4 py-3 text-center">
                   <button
-                    disabled={saving === u.uid}
-                    onClick={() => toggle(u.uid, u.displayName, prizeEligible)}
+                    disabled={saving === `${u.uid}:paidBuyIn`}
+                    onClick={() => toggle(u.uid, u.displayName, 'paidBuyIn', paidBuyIn)}
                     className={`w-10 h-6 rounded-full transition-colors relative ${
-                      prizeEligible ? 'bg-sky-500' : 'bg-sky-50'
+                      paidBuyIn ? 'bg-green-500' : 'bg-slate-200'
+                    } disabled:opacity-50`}
+                  >
+                    <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                      paidBuyIn ? 'translate-x-4' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <button
+                    disabled={saving === `${u.uid}:prizeEligible`}
+                    onClick={() => toggle(u.uid, u.displayName, 'prizeEligible', prizeEligible)}
+                    className={`w-10 h-6 rounded-full transition-colors relative ${
+                      prizeEligible ? 'bg-sky-500' : 'bg-slate-200'
                     } disabled:opacity-50`}
                   >
                     <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
@@ -432,7 +443,7 @@ function UsersTab({
           })}
           {users.length === 0 && (
             <tr>
-              <td colSpan={4} className="px-4 py-8 text-center text-slate-400">No users yet.</td>
+              <td colSpan={5} className="px-4 py-8 text-center text-slate-400">No users yet.</td>
             </tr>
           )}
         </tbody>

@@ -18,10 +18,10 @@ export async function POST(req: NextRequest) {
 
   const db = getAdminDb();
 
-  if (field === 'prizeEligible') {
+  if (field === 'prizeEligible' || field === 'paidBuyIn') {
     const { value } = body as { value: boolean };
     if (value === undefined) return NextResponse.json({ error: 'value required' }, { status: 400 });
-    await db.doc(`scores/${uid}`).set({ prizeEligible: value }, { merge: true });
+    await db.doc(`scores/${uid}`).set({ [field]: value }, { merge: true });
     return NextResponse.json({ ok: true });
   }
 
