@@ -43,12 +43,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async () => {
     const auth = getClientAuth();
-    // Mobile browsers block popups — use redirect flow instead
-    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (isMobile) {
-      await signInWithRedirect(auth, googleProvider);
-    } else {
+    try {
       await signInWithPopup(auth, googleProvider);
+    } catch (err: unknown) {
+      // Only fall back to redirect if the browser explicitly blocked the popup
+      if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'auth/popup-blocked') {
+        await signInWithRedirect(auth, googleProvider);
+      }
     }
   };
 
