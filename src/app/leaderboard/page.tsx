@@ -139,7 +139,7 @@ function StandingsTab({ scores, currentUid }: { scores: UserScore[]; currentUid:
                     <span className={`font-medium ${isMe ? 'text-sky-500' : 'text-slate-700'}`}>
                       {s.displayName || s.email}
                     </span>
-                    {s.prizeEligible && <span title="Prize eligible">🏆</span>}
+                    {s.prizeEligible && <span title="Prize eligible">💰</span>}
                     {isMe && <span className="text-xs text-slate-400">(you)</span>}
                   </div>
                 </td>
@@ -468,7 +468,7 @@ function WhatIfTab({
                     <td className="px-4 py-2.5 text-slate-400 font-mono tabular-nums">{e.rank}</td>
                     <td className="px-4 py-2.5 text-slate-700">
                       {e.displayName || e.email}
-                      {e.prizeEligible && <span className="ml-1">🏆</span>}
+                      {e.prizeEligible && <span className="ml-1">💰</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right font-bold font-mono tabular-nums text-slate-800">
                       {e.total}
