@@ -28,33 +28,37 @@ const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? '')
   .filter(Boolean);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser]         = useState<User | null>(null);
-  const [loading, setLoading]   = useState(true);
+  const [user, setUser]           = useState<User | null>(null);
+  const [loading, setLoading]     = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     const auth = getClientAuth();
+    let unsub: (() => void) | undefined;
 
-    // Must call getRedirectResult to complete a redirect sign-in before
-    // onAuthStateChanged fires with the final state.
+    // Process any pending redirect result FIRST, then attach the auth state
+    // listener. This prevents onAuthStateChanged from firing null prematurely
+    // before the redirect result is available (critical for iOS).
     getRedirectResult(auth)
       .then(result => {
         if (result?.user) setUser(result.user);
       })
       .catch((err: unknown) => {
         const code = err && typeof err === 'object' && 'code' in err
-          ? (err as { code: string }).code
-          : 'unknown';
+          ? (err as { code: string }).code : 'unknown';
         if (code === 'auth/unauthorized-domain') {
           setAuthError('This domain is not authorized in Firebase — add it to Authentication → Settings → Authorized Domains.');
         }
         console.error('[Auth] getRedirectResult error:', code, err);
+      })
+      .finally(() => {
+        unsub = onAuthStateChanged(auth, u => {
+          setUser(u);
+          setLoading(false);
+        });
       });
 
-    return onAuthStateChanged(auth, u => {
-      setUser(u);
-      setLoading(false);
-    });
+    return () => unsub?.();
   }, []);
 
   // Use redirect for all platforms — most reliable on mobile (iOS Safari/Chrome)
