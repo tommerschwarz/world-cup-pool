@@ -94,7 +94,7 @@ export interface UserScore {
   total: number;
   breakdown: ScoreBreakdown[];
   prizeEligible: boolean;
-  paidBuyIn: boolean;
+  paidBuyIn?: boolean;
   updatedAt: string;
 }
 
