@@ -3,17 +3,16 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import {
   onAuthStateChanged,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithCustomToken,
   signOut as fbSignOut,
   type User,
 } from 'firebase/auth';
-import { getClientAuth, googleProvider } from '@/lib/firebase';
+import { getClientAuth } from '@/lib/firebase';
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  signIn: () => Promise<void>;
+  signIn: () => void;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
   isAdmin: boolean;
@@ -34,38 +33,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const auth = getClientAuth();
-    let unsub: (() => void) | undefined;
 
-    // Process any pending redirect result FIRST, then attach the auth state
-    // listener. This prevents onAuthStateChanged from firing null prematurely
-    // before the redirect result is available (critical for iOS).
-    getRedirectResult(auth)
-      .then(result => {
-        if (result?.user) setUser(result.user);
-      })
-      .catch((err: unknown) => {
-        const code = err && typeof err === 'object' && 'code' in err
-          ? (err as { code: string }).code : 'unknown';
-        if (code === 'auth/unauthorized-domain') {
-          setAuthError('This domain is not authorized in Firebase — add it to Authentication → Settings → Authorized Domains.');
-        }
-        console.error('[Auth] getRedirectResult error:', code, err);
-      })
-      .finally(() => {
-        unsub = onAuthStateChanged(auth, u => {
-          setUser(u);
-          setLoading(false);
-        });
+    // Handle custom token returned by the server-side OAuth callback
+    const params = new URLSearchParams(window.location.search);
+    const customToken = params.get('customToken');
+    const errorParam  = params.get('authError');
+
+    if (errorParam) {
+      setAuthError(`Sign-in failed (${errorParam}). Please try again.`);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('authError');
+      window.history.replaceState({}, '', url.toString());
+    }
+
+    if (customToken) {
+      // Remove token from URL immediately
+      const url = new URL(window.location.href);
+      url.searchParams.delete('customToken');
+      window.history.replaceState({}, '', url.toString());
+
+      signInWithCustomToken(auth, customToken).catch(err => {
+        console.error('[Auth] signInWithCustomToken failed:', err);
+        setAuthError('Sign-in failed. Please try again.');
       });
+    }
 
-    return () => unsub?.();
+    // Auth state listener — fires once with current state on mount
+    const unsub = onAuthStateChanged(auth, u => {
+      setUser(u);
+      setLoading(false);
+    });
+
+    return unsub;
   }, []);
 
-  // Use redirect for all platforms — most reliable on mobile (iOS Safari/Chrome)
-  // where popups either get blocked or behave as full-page navigations.
-  const signIn = async () => {
+  // Navigate to server-side OAuth init — works on every browser/platform
+  const signIn = () => {
     setAuthError(null);
-    await signInWithRedirect(getClientAuth(), googleProvider);
+    window.location.href = '/api/auth/init';
   };
 
   const signOut = async () => {
