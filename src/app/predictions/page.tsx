@@ -368,9 +368,11 @@ function GroupCard({
                 className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-all shrink-0 ${
                   isTopSeed
                     ? 'bg-sky-500 text-white'
-                    : isAdvancing
-                      ? 'bg-sky-50 text-slate-500 hover:bg-sky-100'
-                      : 'invisible'
+                    : isAdvancing && !topSeed
+                      ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-400 animate-pulse'
+                      : isAdvancing
+                        ? 'bg-sky-50 text-slate-500 hover:bg-sky-100'
+                        : 'invisible'
                 } disabled:cursor-not-allowed`}
               >
                 {isTopSeed && resultKnown
@@ -384,10 +386,10 @@ function GroupCard({
 
       {/* Helper text */}
       {!locked && (
-        <p className="mt-3 text-xs text-slate-400 leading-relaxed">
+        <p className={`mt-3 text-xs leading-relaxed ${advancing.length === 2 && !topSeed ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
           {advancing.length === 0 && 'Pick 2 teams to advance →'}
           {advancing.length === 1 && 'Pick 1 more team to advance →'}
-          {advancing.length === 2 && !topSeed && 'Now tap "1st" to pick the group winner'}
+          {advancing.length === 2 && !topSeed && '★ Tap "1st" to pick the group winner'}
           {advancing.length === 2 && topSeed && ''}
         </p>
       )}
