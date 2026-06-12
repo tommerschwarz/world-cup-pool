@@ -174,7 +174,7 @@ function PredictionsContent() {
       <div className="mt-10">
         <h2 className="text-lg font-semibold text-slate-800 mb-1">🇺🇸 USA Pool Play</h2>
         <p className="text-slate-500 text-sm mb-4">
-          Pick Win / Draw / Loss for each USA match. <span className="text-sky-600 font-medium">{SCORING.USA_ALL_CORRECT_PTS} pts</span> if all 3 are correct — all or nothing.
+          Pick Win / Draw / Loss for each USA match. <span className="text-sky-600 font-medium">{SCORING.USA_PER_MATCH_PTS} pts</span> per correct prediction.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {USA_MATCHES.map(match => (

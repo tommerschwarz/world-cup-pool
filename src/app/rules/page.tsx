@@ -52,11 +52,10 @@ export default function RulesPage() {
           {/* USA pool play */}
           <section className="bg-white rounded-2xl p-6 border border-sky-100">
             <h2 className="text-lg font-semibold text-sky-500 mb-1">🇺🇸 USA Pool Play</h2>
-            <p className="text-sm text-slate-400 mb-4">All or nothing — {SCORING.USA_ALL_CORRECT_PTS} pts</p>
+            <p className="text-sm text-slate-400 mb-4">{SCORING.USA_PER_MATCH_PTS} pts per correct pick — max {SCORING.USA_PER_MATCH_PTS * 3} pts</p>
             <p className="text-sm text-slate-600 leading-relaxed">
-              Pick Win / Draw / Loss for all 3 USA group-stage matches (vs Paraguay, Australia, Türkiye).
-              If every prediction is correct, you earn <strong className="text-slate-800">{SCORING.USA_ALL_CORRECT_PTS} pts</strong>.
-              If any pick is wrong, you earn 0.
+              Pick Win / Draw / Loss for each of USA's 3 group-stage matches (vs Paraguay, Australia, Türkiye).
+              Earn <strong className="text-slate-800">{SCORING.USA_PER_MATCH_PTS} pts</strong> for each correct prediction.
             </p>
           </section>
 
@@ -140,7 +139,7 @@ export default function RulesPage() {
                 {[
                   ['Group stage (advance picks)',    SCORING.ADVANCE_PTS * 24],
                   ['Group stage (top-seed bonus)',   SCORING.TOP_SEED_PTS * 12],
-                  ['USA pool play (all-or-nothing)', SCORING.USA_ALL_CORRECT_PTS],
+                  ['USA pool play (8 pts × 3 matches)', SCORING.USA_PER_MATCH_PTS * 3],
                   ['Knockout rounds',               SCORING.ROUND_TOTAL_PTS * 5 + SCORING.KNOCKOUT_PER_MATCH['3RD']!],
                   ['Tournament podium bonus',       SCORING.TOP3_FIRST_PTS + SCORING.TOP3_SECOND_PTS + SCORING.TOP3_THIRD_PTS],
                 ].map(([label, pts]) => (
@@ -152,7 +151,7 @@ export default function RulesPage() {
                 <tr className="border-t-2 border-sky-300">
                   <td className="pt-3 font-bold text-white">Total</td>
                   <td className="pt-3 text-right font-mono font-bold text-white text-base">
-                    {SCORING.ADVANCE_PTS * 24 + SCORING.TOP_SEED_PTS * 12 + SCORING.USA_ALL_CORRECT_PTS + SCORING.ROUND_TOTAL_PTS * 5 + SCORING.KNOCKOUT_PER_MATCH['3RD']! + SCORING.TOP3_FIRST_PTS + SCORING.TOP3_SECOND_PTS + SCORING.TOP3_THIRD_PTS}
+                    {SCORING.ADVANCE_PTS * 24 + SCORING.TOP_SEED_PTS * 12 + SCORING.USA_PER_MATCH_PTS * 3 + SCORING.ROUND_TOTAL_PTS * 5 + SCORING.KNOCKOUT_PER_MATCH['3RD']! + SCORING.TOP3_FIRST_PTS + SCORING.TOP3_SECOND_PTS + SCORING.TOP3_THIRD_PTS}
                   </td>
                 </tr>
               </tbody>
@@ -165,7 +164,7 @@ export default function RulesPage() {
             <ol className="space-y-1 text-slate-600 text-sm leading-relaxed list-decimal list-inside">
               <li>Most correct advancing-team picks (group stage)</li>
               <li>Most correct group-winner picks</li>
-              <li>Correct USA pool play prediction (all 3 vs none)</li>
+              <li>Most correct USA pool play predictions</li>
               <li>Earliest submission time</li>
             </ol>
           </section>

@@ -18,8 +18,8 @@ export const SCORING = {
   ADVANCE_PTS:  3,   // per correctly predicted advancing team (max 2 × 12 = 24 picks → 72 pts)
   TOP_SEED_PTS: 2,   // bonus for correct group winner             (max 12 picks → 24 pts)
 
-  // USA pool play — all-or-nothing across all 3 matches
-  USA_ALL_CORRECT_PTS: 15,
+  // USA pool play — 8 pts per correct W/D/L prediction (max 3 × 8 = 24)
+  USA_PER_MATCH_PTS: 8,
 
   // Knockout stage — each MAIN round is worth ROUND_TOTAL_PTS pts total
   // Points per correct pick = ROUND_TOTAL_PTS / number_of_matches_in_round
@@ -47,11 +47,11 @@ export const SCORING = {
 //
 // Max possible score:
 //   Group stage:  96 pts  (72 advance + 24 top seed)
-//   USA W/D/L:    15 pts  (all-or-nothing)
+//   USA W/D/L:    24 pts  (8 pts × 3 matches)
 //   Knockout:    176 pts  (32×5 rounds + 16 3rd-place match)
 //   Top 3 bonus:  27 pts  (15 + 8 + 4)
 //   ─────────────────────
-//   Total:       314 pts
+//   Total:       323 pts
 // ---------------------------------------------------------------------------
 
 export function calculateScore(
@@ -101,17 +101,23 @@ export function calculateScore(
     total += groupPoints;
   }
 
-  // ── USA pool play (all-or-nothing) ────────────────────────────────────────
+  // ── USA pool play (8 pts per correct match) ───────────────────────────────
 
-  const usaResults  = bracket.usaMatchResults ?? {};
-  const usaPreds    = predictions.usaMatchPredictions ?? {};
-  const allUsaSet   = USA_MATCHES.every(m => !!usaResults[m.id]);
-  const allUsaRight = USA_MATCHES.every(m => usaResults[m.id] != null && usaPreds[m.id] === usaResults[m.id]);
+  const usaResults = bracket.usaMatchResults ?? {};
+  const usaPreds   = predictions.usaMatchPredictions ?? {};
+  const usaDetails: Record<string, number> = {};
+  let usaPts = 0;
 
-  if (allUsaSet) {
-    const pts = allUsaRight ? SCORING.USA_ALL_CORRECT_PTS : 0;
-    breakdown.push({ group: 'USA', points: pts, details: { allCorrect: allUsaRight ? 1 : 0 } });
-    total += pts;
+  for (const match of USA_MATCHES) {
+    if (usaResults[match.id] != null && usaPreds[match.id] === usaResults[match.id]) {
+      usaDetails[match.id] = SCORING.USA_PER_MATCH_PTS;
+      usaPts += SCORING.USA_PER_MATCH_PTS;
+    }
+  }
+
+  if (USA_MATCHES.some(m => !!usaResults[m.id])) {
+    breakdown.push({ group: 'USA', points: usaPts, details: usaDetails });
+    total += usaPts;
   }
 
   // ── Knockout rounds ────────────────────────────────────────────────────────
