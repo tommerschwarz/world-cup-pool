@@ -116,7 +116,7 @@ export const STAGE_LABELS: Record<string, string> = {
 
 // All group picks lock at tournament kickoff — Jun 11 12:00 PM PDT (19:00 UTC).
 // The 5-min buffer in isGroupLocked means the UI locks at 11:55 AM PDT.
-const TOURNAMENT_KICKOFF = '2026-06-11T19:00:00Z';
+const TOURNAMENT_KICKOFF = '2026-06-12T23:59:00Z';
 export const GROUP_LOCK_TIMES: Record<string, string> = {
   A: TOURNAMENT_KICKOFF,
   B: TOURNAMENT_KICKOFF,
