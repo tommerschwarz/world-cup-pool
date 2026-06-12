@@ -78,7 +78,7 @@ function LeaderboardContent() {
         <PicksHidden />
       )}
       {tab === 'picks' && bracket && isTournamentLocked() && (
-        <PoolPicksTab bracket={bracket} predictions={allPredictions} scores={scores} />
+        <PoolPicksTab bracket={bracket} predictions={allPredictions} scores={scores} currentUid={user?.uid ?? ''} />
       )}
       {tab === 'whatif' && bracket && isTournamentLocked() && (
         <WhatIfTab bracket={bracket} predictions={allPredictions} scores={scores} />
@@ -193,11 +193,12 @@ function heatBg(pct: number, dog: boolean): string {
 }
 
 function PoolPicksTab({
-  bracket, predictions, scores,
+  bracket, predictions, scores, currentUid,
 }: {
   bracket: BracketConfig;
   predictions: UserPredictions[];
   scores: UserScore[];
+  currentUid: string;
 }) {
   const [heatmap, setHeatmap] = useState(false);
   const [dogMode, setDogMode] = useState(false);
@@ -249,11 +250,17 @@ function PoolPicksTab({
               <th className="sticky left-0 z-10 bg-white px-4 py-3 text-left text-slate-400 min-w-24">
                 Group
               </th>
-              {users.map(u => (
-                <th key={u.uid} className="px-3 py-3 text-center text-slate-500 whitespace-nowrap font-normal min-w-28">
-                  {u.displayName?.split(' ')[0] || u.email.split('@')[0]}
-                </th>
-              ))}
+              {users.map(u => {
+                const isMe = u.uid === currentUid;
+                return (
+                  <th key={u.uid} className={`px-3 py-3 text-center whitespace-nowrap min-w-28 ${
+                    isMe ? 'bg-sky-50 text-sky-600 font-semibold' : 'text-slate-500 font-normal'
+                  }`}>
+                    {u.displayName?.split(' ')[0] || u.email.split('@')[0]}
+                    {isMe && <span className="block text-xs font-normal text-sky-400 leading-tight">you</span>}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody className="divide-y divide-sky-100/30">
@@ -270,10 +277,11 @@ function PoolPicksTab({
                   {users.map(u => {
                     const pred = u.groupPredictions?.[group];
                     const pct  = heatmap ? groupScorePct(u, group, bracket) : null;
+                    const isMe = u.uid === currentUid;
                     return (
                       <td
                         key={u.uid}
-                        className={`text-center transition-colors ${heatmap ? 'p-0' : 'px-2 py-2 align-top'}`}
+                        className={`text-center transition-colors ${heatmap ? 'p-0' : `px-2 py-2 align-top${isMe ? ' bg-sky-50/40' : ''}`}`}
                         style={pct !== null ? { backgroundColor: heatBg(pct, dogMode) } : undefined}
                       >
                         {heatmap
@@ -286,6 +294,44 @@ function PoolPicksTab({
                               dogMode={dogMode}
                             />
                         }
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+            {/* Podium separator */}
+            <tr className="border-t-2 border-sky-200">
+              <td className="sticky left-0 z-10 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                🏆 Podium Picks
+              </td>
+              {users.map(u => (
+                <td key={u.uid} className={u.uid === currentUid ? 'bg-sky-50' : 'bg-slate-50'} />
+              ))}
+            </tr>
+
+            {/* One row per podium pick slot */}
+            {(['pick1', 'pick2', 'pick3'] as const).map((pickKey, idx) => {
+              const medals = ['🥇', '🥈', '🥉'];
+              return (
+                <tr key={pickKey} className="hover:bg-sky-50/50">
+                  <td className="sticky left-0 z-10 bg-white px-4 py-3 font-semibold text-slate-600">
+                    {medals[idx]} Pick {idx + 1}
+                  </td>
+                  {users.map(u => {
+                    const teamId = u.topThreePredictions?.[pickKey];
+                    const team   = teamId ? bracket.teams[teamId] : null;
+                    const isMe   = u.uid === currentUid;
+                    return (
+                      <td key={u.uid} className={`text-center px-2 py-2${isMe ? ' bg-sky-50/40' : ''}`}>
+                        {team ? (
+                          <div className="flex items-center justify-center gap-1 whitespace-nowrap bg-sky-50/70 text-slate-600 rounded px-1.5 py-0.5">
+                            <span>{team.flagEmoji}</span>
+                            <span>{team.shortName}</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
                     );
                   })}
