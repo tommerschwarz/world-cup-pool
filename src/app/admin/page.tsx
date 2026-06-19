@@ -149,7 +149,7 @@ function GroupResultsTab({
 
   const save = async (group: string) => {
     const standings = (editing[group] ?? []).filter(Boolean);
-    if (standings.length < 2) { setStatus('✗ Need at least 2 teams'); return; }
+    if (standings.length < 1) { setStatus('✗ Select at least 1 team'); return; }
     setSaving(group);
     try {
       await authFetch('/api/admin/results', {
@@ -236,7 +236,9 @@ function GroupResultsTab({
           <div
             key={group}
             className={`bg-white border rounded-2xl p-4 ${
-              result ? 'border-green-500/30' : 'border-sky-100'
+              !result ? 'border-sky-100'
+              : result.finalStandings.length >= 2 ? 'border-green-500/30'
+              : 'border-amber-400/50'
             }`}
           >
             <div className="flex items-center justify-between mb-3">
@@ -255,8 +257,12 @@ function GroupResultsTab({
 
             {!isEditing && result && (
               <div className="space-y-1.5">
+                {result.finalStandings.length < 2 && (
+                  <p className="text-xs text-amber-500 mb-2">Partial — 2nd place still TBD</p>
+                )}
                 {result.finalStandings.map((id, i) => {
                   const team = bracket.teams[id];
+                  const knowsAdvancers = result.finalStandings.length >= 2;
                   return (
                     <div key={id} className="flex items-center gap-2 text-sm">
                       <span className="text-slate-400 w-5 text-right font-mono">{i + 1}.</span>
@@ -265,7 +271,8 @@ function GroupResultsTab({
                         {team?.name ?? id}
                       </span>
                       {i === 0 && <span className="text-sky-500 text-xs">①</span>}
-                      {i < 2 && <span className="ml-auto text-xs text-green-500">advances</span>}
+                      {knowsAdvancers && i < 2 && <span className="ml-auto text-xs text-green-500">advances</span>}
+                      {!knowsAdvancers && i === 0 && <span className="ml-auto text-xs text-green-500">confirmed 1st</span>}
                     </div>
                   );
                 })}
@@ -278,7 +285,7 @@ function GroupResultsTab({
 
             {isEditing && (
               <div className="space-y-2">
-                <p className="text-xs text-slate-400 mb-2">Drag or select teams in finishing order (1st → 4th)</p>
+                <p className="text-xs text-slate-400 mb-2">Select teams in finishing order. Partial OK — save 1st place alone to award group-winner points now.</p>
                 {[0, 1, 2, 3].map(pos => (
                   <div key={pos} className="flex items-center gap-2">
                     <span className="text-slate-400 text-xs w-6 text-right">{pos + 1}.</span>
