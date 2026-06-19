@@ -16,8 +16,8 @@ export async function POST(req: NextRequest) {
       group: string;
       finalStandings: string[];
     };
-    if (!group || !Array.isArray(finalStandings) || finalStandings.length < 2) {
-      return NextResponse.json({ error: 'group and finalStandings (min 2) required' }, { status: 400 });
+    if (!group || !Array.isArray(finalStandings) || finalStandings.length < 1) {
+      return NextResponse.json({ error: 'group and finalStandings (min 1) required' }, { status: 400 });
     }
     await db.doc('bracket/config').set(
       { groupResults: { [group]: { finalStandings } } },
