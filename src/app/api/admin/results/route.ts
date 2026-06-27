@@ -12,15 +12,16 @@ export async function POST(req: NextRequest) {
   const db   = getAdminDb();
 
   if (body.type === 'groupResult') {
-    const { group, finalStandings } = body as {
+    const { group, finalStandings, thirdAdvances } = body as {
       group: string;
       finalStandings: string[];
+      thirdAdvances?: boolean;
     };
     if (!group || !Array.isArray(finalStandings) || finalStandings.length < 1) {
       return NextResponse.json({ error: 'group and finalStandings (min 1) required' }, { status: 400 });
     }
     await db.doc('bracket/config').set(
-      { groupResults: { [group]: { finalStandings } } },
+      { groupResults: { [group]: { finalStandings, thirdAdvances: thirdAdvances ?? false } } },
       { merge: true }
     );
     return NextResponse.json({ ok: true });

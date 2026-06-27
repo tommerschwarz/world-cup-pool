@@ -164,7 +164,7 @@ function groupScorePct(u: UserPredictions, group: string, bracket: BracketConfig
   if (!result) return null;
   const pred = u.groupPredictions?.[group];
   if (!pred) return 0;
-  const actualAdvancers = new Set(result.finalStandings.slice(0, 2));
+  const actualAdvancers = new Set(result.finalStandings.slice(0, result.thirdAdvances ? 3 : 2));
   const actualTop = result.finalStandings[0];
   let pts = 0;
   for (const id of pred.advancingTeamIds) {
@@ -266,7 +266,7 @@ function PoolPicksTab({
           <tbody className="divide-y divide-sky-100/30">
             {GROUPS.map(group => {
               const result          = bracket.groupResults?.[group];
-              const actualAdvancers = result ? new Set(result.finalStandings.slice(0, 2)) : null;
+              const actualAdvancers = result ? new Set(result.finalStandings.slice(0, result.thirdAdvances ? 3 : 2)) : null;
               const actualTop       = result ? result.finalStandings[0] : null;
 
               return (

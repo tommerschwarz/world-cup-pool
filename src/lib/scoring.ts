@@ -82,7 +82,8 @@ export function calculateScore(
     const details: Record<string, number> = {};
     let groupPoints = 0;
 
-    const actualAdvancers = new Set(result.finalStandings.slice(0, 2));
+    const numAdvancers    = result.thirdAdvances ? 3 : 2;
+    const actualAdvancers = new Set(result.finalStandings.slice(0, numAdvancers));
     const actualTopSeed   = result.finalStandings[0];
 
     for (const teamId of prediction.advancingTeamIds) {

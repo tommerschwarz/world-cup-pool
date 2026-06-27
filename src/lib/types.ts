@@ -36,6 +36,7 @@ export interface MatchResult {
 
 export interface GroupResult {
   finalStandings: string[];
+  thirdAdvances?: boolean; // true when the 3rd-place team qualifies as a best-third
 }
 
 export interface BracketConfig {

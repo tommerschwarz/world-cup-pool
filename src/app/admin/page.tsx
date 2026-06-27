@@ -137,14 +137,16 @@ function GroupResultsTab({
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   // Local standings editor: group → ordered array of teamIds (1st to 4th)
-  const [editing, setEditing] = useState<Record<string, string[]>>({});
+  const [editing, setEditing]           = useState<Record<string, string[]>>({});
+  const [editingThird, setEditingThird] = useState<Record<string, boolean>>({});
 
   const initEdit = (group: string) => {
-    const existing = bracket.groupResults?.[group]?.finalStandings ?? [];
-    const teams    = getGroupTeams(bracket.teams, group);
+    const result   = bracket.groupResults?.[group];
+    const existing = result?.finalStandings ?? [];
     // Pre-fill with existing, pad with empty strings
     const padded = [...existing, ...Array(4).fill('')].slice(0, 4);
     setEditing(prev => ({ ...prev, [group]: padded }));
+    setEditingThird(prev => ({ ...prev, [group]: result?.thirdAdvances ?? false }));
   };
 
   const save = async (group: string) => {
@@ -156,6 +158,7 @@ function GroupResultsTab({
         type:           'groupResult',
         group,
         finalStandings: standings,
+        thirdAdvances:  editingThird[group] ?? false,
       });
       setEditing(prev => { const n = { ...prev }; delete n[group]; return n; });
       setStatus(`✓ Group ${group} saved — recalculating…`);
@@ -260,9 +263,14 @@ function GroupResultsTab({
                 {result.finalStandings.length < 2 && (
                   <p className="text-xs text-amber-500 mb-2">Partial — 2nd place still TBD</p>
                 )}
+                {result.thirdAdvances && (
+                  <p className="text-xs text-sky-500 mb-2">3rd place qualifies as best-third ✓</p>
+                )}
                 {result.finalStandings.map((id, i) => {
                   const team = bracket.teams[id];
+                  const numAdv = result.thirdAdvances ? 3 : 2;
                   const knowsAdvancers = result.finalStandings.length >= 2;
+                  const advances = i < numAdv && knowsAdvancers;
                   return (
                     <div key={id} className="flex items-center gap-2 text-sm">
                       <span className="text-slate-400 w-5 text-right font-mono">{i + 1}.</span>
@@ -271,7 +279,7 @@ function GroupResultsTab({
                         {team?.name ?? id}
                       </span>
                       {i === 0 && <span className="text-sky-500 text-xs">①</span>}
-                      {knowsAdvancers && i < 2 && <span className="ml-auto text-xs text-green-500">advances</span>}
+                      {advances && <span className="ml-auto text-xs text-green-500">advances</span>}
                       {!knowsAdvancers && i === 0 && <span className="ml-auto text-xs text-green-500">confirmed 1st</span>}
                     </div>
                   );
@@ -310,6 +318,15 @@ function GroupResultsTab({
                     </select>
                   </div>
                 ))}
+                <label className="flex items-center gap-2 text-sm text-slate-600 mt-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={editingThird[group] ?? false}
+                    onChange={e => setEditingThird(prev => ({ ...prev, [group]: e.target.checked }))}
+                    className="w-4 h-4 accent-sky-500"
+                  />
+                  3rd place also advances (best 3rd-place qualifier)
+                </label>
                 <div className="flex gap-2 mt-3">
                   <button
                     disabled={saving === group}
