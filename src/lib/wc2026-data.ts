@@ -4,7 +4,7 @@
 // Hosts: USA (Group D), Canada (Group B), Mexico (Group A)
 // ---------------------------------------------------------------------------
 
-import type { Team, BracketConfig } from './types';
+import type { Team, BracketConfig, Stage } from './types';
 
 export const TEAMS: Team[] = [
   // --- Group A ---
@@ -167,3 +167,43 @@ export function isUsaMatchLocked(matchId: string): boolean {
   if (!match) return false;
   return Date.now() >= new Date(match.startTime).getTime() - 5 * 60 * 1000;
 }
+
+// ---------------------------------------------------------------------------
+// Knockout stage
+// ---------------------------------------------------------------------------
+
+// First R32 match: Sun Jun 28 3 PM EDT = 19:00 UTC
+export const KNOCKOUT_LOCK_TIME = '2026-06-28T19:00:00Z';
+export function isKnockoutLocked(): boolean {
+  return Date.now() >= new Date(KNOCKOUT_LOCK_TIME).getTime() - 5 * 60 * 1000;
+}
+
+// R32 match IDs in bracket order
+export const R32_MATCH_IDS = [
+  'r32_01','r32_02','r32_03','r32_04',
+  'r32_05','r32_06','r32_07','r32_08',
+  'r32_09','r32_10','r32_11','r32_12',
+  'r32_13','r32_14','r32_15','r32_16',
+] as const;
+
+// Which two feeder matches produce home/away for each later round match.
+// sf_3rd is the 3rd-place match: its slots are the LOSERS of sf_01 and sf_02.
+export const BRACKET_SOURCES: Record<string, readonly [string, string]> = {
+  r16_01: ['r32_01','r32_02'],  r16_02: ['r32_03','r32_04'],
+  r16_03: ['r32_05','r32_06'],  r16_04: ['r32_07','r32_08'],
+  r16_05: ['r32_09','r32_10'],  r16_06: ['r32_11','r32_12'],
+  r16_07: ['r32_13','r32_14'],  r16_08: ['r32_15','r32_16'],
+  qf_01:  ['r16_01','r16_02'],  qf_02:  ['r16_03','r16_04'],
+  qf_03:  ['r16_05','r16_06'],  qf_04:  ['r16_07','r16_08'],
+  sf_01:  ['qf_01','qf_02'],    sf_02:  ['qf_03','qf_04'],
+  final:  ['sf_01','sf_02'],
+  sf_3rd: ['sf_01','sf_02'],    // losers
+};
+
+export const BRACKET_ROUNDS: { stage: Stage; label: string; matchIds: string[] }[] = [
+  { stage: 'R32',   label: 'Round of 32',    matchIds: ['r32_01','r32_02','r32_03','r32_04','r32_05','r32_06','r32_07','r32_08','r32_09','r32_10','r32_11','r32_12','r32_13','r32_14','r32_15','r32_16'] },
+  { stage: 'R16',   label: 'Round of 16',    matchIds: ['r16_01','r16_02','r16_03','r16_04','r16_05','r16_06','r16_07','r16_08'] },
+  { stage: 'QF',    label: 'Quarter-finals', matchIds: ['qf_01','qf_02','qf_03','qf_04'] },
+  { stage: 'SF',    label: 'Semi-finals',    matchIds: ['sf_01','sf_02'] },
+  { stage: 'FINAL', label: 'Final & 3rd',    matchIds: ['final','sf_3rd'] },
+];

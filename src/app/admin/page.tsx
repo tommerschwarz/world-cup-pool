@@ -5,9 +5,9 @@ import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { AdminGuard } from '@/components/AdminGuard';
-import { GROUPS, getGroupTeams, USA_MATCHES } from '@/lib/wc2026-data';
+import { GROUPS, getGroupTeams, USA_MATCHES, BRACKET_ROUNDS } from '@/lib/wc2026-data';
 import type { UsaOutcome } from '@/lib/types';
-import type { BracketConfig, UserScore, UserPredictions, Team, GroupPrediction } from '@/lib/types';
+import type { BracketConfig, UserScore, UserPredictions, Team, GroupPrediction, Match } from '@/lib/types';
 
 export default function AdminPage() {
   return (
@@ -22,7 +22,7 @@ function AdminContent() {
   const [bracket, setBracket]     = useState<BracketConfig | null>(null);
   const [scores, setScores]       = useState<UserScore[]>([]);
   const [allPreds, setAllPreds]   = useState<UserPredictions[]>([]);
-  const [tab, setTab]             = useState<'results' | 'users' | 'picks'>('results');
+  const [tab, setTab]             = useState<'results' | 'users' | 'picks' | 'bracket'>('results');
   const [status, setStatus]       = useState('');
   const [recalcRunning, setRecalcRunning] = useState(false);
 
@@ -65,9 +65,10 @@ function AdminContent() {
   };
 
   const tabs = [
-    { key: 'results', label: 'Group Results' },
-    { key: 'users',   label: 'Users'         },
-    { key: 'picks',   label: 'Manual Picks'  },
+    { key: 'results',  label: 'Group Results' },
+    { key: 'users',    label: 'Users'         },
+    { key: 'picks',    label: 'Manual Picks'  },
+    { key: 'bracket',  label: 'Bracket'       },
   ] as const;
 
   return (
@@ -116,6 +117,9 @@ function AdminContent() {
       )}
       {tab === 'picks' && bracket && (
         <ManualPicksTab bracket={bracket} users={allPreds} authFetch={authFetch} setStatus={setStatus} />
+      )}
+      {tab === 'bracket' && bracket && (
+        <BracketTab bracket={bracket} authFetch={authFetch} setStatus={setStatus} onSaved={recalculate} />
       )}
       {!bracket && <p className="text-slate-400">Loading bracket…</p>}
     </div>
@@ -472,6 +476,210 @@ function UsersTab({
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bracket tab
+// ---------------------------------------------------------------------------
+
+function BracketMatchSetupCard({
+  matchId,
+  bracket,
+  authFetch,
+  setStatus,
+}: {
+  matchId: string;
+  bracket: BracketConfig;
+  authFetch: (url: string, body: object) => Promise<unknown>;
+  setStatus: (s: string) => void;
+}) {
+  const existing = bracket.matches?.[matchId] as Match | undefined;
+  const [homeVal, setHomeVal] = useState(existing?.homeTeamId ?? '');
+  const [awayVal, setAwayVal] = useState(existing?.awayTeamId ?? '');
+  const [saving, setSaving]   = useState(false);
+
+  useEffect(() => {
+    setHomeVal(existing?.homeTeamId ?? '');
+    setAwayVal(existing?.awayTeamId ?? '');
+  }, [existing?.homeTeamId, existing?.awayTeamId]);
+
+  const matchNum = parseInt(matchId.split('_')[1], 10);
+  const allTeams = Object.values(bracket.teams).sort((a, b) => a.name.localeCompare(b.name));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await authFetch('/api/admin/bracket', {
+        type: 'setMatch',
+        matchId,
+        homeTeamId: homeVal || null,
+        awayTeamId: awayVal || null,
+      });
+      setStatus(`✓ Match ${matchNum} saved`);
+    } catch (e: unknown) {
+      setStatus(`✗ ${e instanceof Error ? e.message : 'Error'}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-sky-100 rounded-2xl p-3">
+      <p className="text-xs font-semibold text-sky-600 mb-2">Match {matchNum}</p>
+      <div className="space-y-1.5 mb-2">
+        <select
+          value={homeVal}
+          onChange={e => setHomeVal(e.target.value)}
+          className="w-full bg-sky-50 border border-sky-200 rounded-lg px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:border-sky-500"
+        >
+          <option value="">— Home team —</option>
+          {allTeams.map(t => (
+            <option key={t.id} value={t.id}>{t.flagEmoji} {t.name}</option>
+          ))}
+        </select>
+        <select
+          value={awayVal}
+          onChange={e => setAwayVal(e.target.value)}
+          className="w-full bg-sky-50 border border-sky-200 rounded-lg px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:border-sky-500"
+        >
+          <option value="">— Away team —</option>
+          {allTeams.map(t => (
+            <option key={t.id} value={t.id}>{t.flagEmoji} {t.name}</option>
+          ))}
+        </select>
+      </div>
+      <button
+        onClick={save}
+        disabled={saving}
+        className="w-full py-1 bg-sky-500 text-white text-xs font-medium rounded-lg hover:bg-sky-600 disabled:opacity-50 transition-colors"
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+    </div>
+  );
+}
+
+function BracketTab({
+  bracket, authFetch, setStatus, onSaved,
+}: {
+  bracket: BracketConfig;
+  authFetch: (url: string, body: object) => Promise<unknown>;
+  setStatus: (s: string) => void;
+  onSaved: () => void;
+}) {
+  const [subTab, setSubTab] = useState<'setup' | 'results'>('setup');
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const setResult = async (matchId: string, winnerId: string | null) => {
+    setSaving(matchId);
+    try {
+      await authFetch('/api/admin/bracket', { type: 'setResult', matchId, winnerId });
+      setStatus(`✓ Result saved for ${matchId}`);
+      onSaved();
+    } catch (e: unknown) {
+      setStatus(`✗ ${e instanceof Error ? e.message : 'Error'}`);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex gap-1 bg-sky-50 rounded-xl p-1 w-fit mb-6">
+        {(['setup', 'results'] as const).map(key => (
+          <button
+            key={key}
+            onClick={() => setSubTab(key)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              subTab === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {key === 'setup' ? 'R32 Setup' : 'Results'}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'setup' && (
+        <div>
+          <p className="text-sm text-slate-500 mb-4">Set the home and away teams for each Round of 32 slot.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {(['r32_01','r32_02','r32_03','r32_04','r32_05','r32_06','r32_07','r32_08',
+               'r32_09','r32_10','r32_11','r32_12','r32_13','r32_14','r32_15','r32_16'] as const).map(matchId => (
+              <BracketMatchSetupCard
+                key={matchId}
+                matchId={matchId}
+                bracket={bracket}
+                authFetch={authFetch}
+                setStatus={setStatus}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {subTab === 'results' && (
+        <div className="space-y-8">
+          {BRACKET_ROUNDS.map(({ stage, label, matchIds }) => {
+            const matchesWithTeams = matchIds.filter(mid => {
+              const m = bracket.matches?.[mid] as Match | undefined;
+              return m?.homeTeamId && m?.awayTeamId;
+            });
+            if (matchesWithTeams.length === 0) return null;
+            return (
+              <div key={stage}>
+                <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">{label}</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {matchesWithTeams.map(mid => {
+                    const m = bracket.matches[mid] as Match;
+                    const homeTeam = m.homeTeamId ? bracket.teams[m.homeTeamId] : null;
+                    const awayTeam = m.awayTeamId ? bracket.teams[m.awayTeamId] : null;
+                    const currentWinner = m.result?.winnerId ?? null;
+                    return (
+                      <div key={mid} className="bg-white border border-sky-100 rounded-2xl p-3">
+                        <p className="text-xs text-slate-400 mb-2">{mid}</p>
+                        <div className="flex flex-col gap-1.5">
+                          {[
+                            { team: homeTeam, teamId: m.homeTeamId },
+                            { team: awayTeam, teamId: m.awayTeamId },
+                          ].map(({ team, teamId }) => (
+                            <button
+                              key={teamId ?? 'null'}
+                              disabled={saving === mid || !teamId}
+                              onClick={() => teamId && setResult(mid, currentWinner === teamId ? null : teamId)}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all text-left disabled:opacity-50 ${
+                                currentWinner === teamId
+                                  ? 'bg-sky-500 text-white font-semibold'
+                                  : 'bg-sky-50 text-slate-600 hover:bg-sky-100'
+                              }`}
+                            >
+                              <span className="text-base">{team?.flagEmoji ?? '🏳️'}</span>
+                              <span>{team?.name ?? teamId ?? 'TBD'}</span>
+                            </button>
+                          ))}
+                        </div>
+                        {currentWinner && (
+                          <button
+                            disabled={saving === mid}
+                            onClick={() => setResult(mid, null)}
+                            className="mt-2 text-xs text-slate-400 hover:text-slate-600 transition-colors"
+                          >
+                            Clear result
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          {Object.keys(bracket.matches ?? {}).length === 0 && (
+            <p className="text-slate-400 text-sm">No matches set up yet. Use the Setup tab first.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

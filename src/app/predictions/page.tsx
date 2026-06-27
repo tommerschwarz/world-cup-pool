@@ -5,9 +5,9 @@ import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { GROUPS, getGroupTeams, isGroupLocked, USA_MATCHES, isUsaMatchLocked, isTournamentLocked } from '@/lib/wc2026-data';
+import { GROUPS, getGroupTeams, isGroupLocked, USA_MATCHES, isUsaMatchLocked, isTournamentLocked, BRACKET_ROUNDS, BRACKET_SOURCES, isKnockoutLocked } from '@/lib/wc2026-data';
 import type { UsaMatch } from '@/lib/wc2026-data';
-import type { BracketConfig, GroupPrediction, Team, TopThreePrediction, UserPredictions, UsaOutcome } from '@/lib/types';
+import type { BracketConfig, GroupPrediction, Team, TopThreePrediction, UserPredictions, UsaOutcome, Match } from '@/lib/types';
 import { SCORING } from '@/lib/scoring';
 
 export default function PredictionsPage() {
@@ -24,6 +24,7 @@ function PredictionsContent() {
   const [groupPreds, setGroupPreds]       = useState<Record<string, GroupPrediction>>({});
   const [usaMatchPreds, setUsaMatchPreds] = useState<Record<string, UsaOutcome | null>>({});
   const [topThreePreds, setTopThreePreds] = useState<TopThreePrediction>({ pick1: null, pick2: null, pick3: null });
+  const [knockoutPreds, setKnockoutPreds] = useState<Record<string, string>>({});
   const [saving, setSaving]               = useState<Record<string, boolean>>({});
   const [savedAt, setSavedAt]             = useState<Record<string, number>>({});
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -42,6 +43,7 @@ function PredictionsContent() {
         setGroupPreds(data.groupPredictions ?? {});
         setUsaMatchPreds(data.usaMatchPredictions ?? {});
         if (data.topThreePredictions) setTopThreePreds(data.topThreePredictions);
+        if (data.knockoutPredictions) setKnockoutPreds(data.knockoutPredictions);
       }
     });
   }, [user]);
@@ -127,6 +129,18 @@ function PredictionsContent() {
     debounceTimers.current['top3'] = setTimeout(() => saveTopThree(preds), 600);
   }, [saveTopThree]);
 
+  const saveKnockoutPick = useCallback(async (matchId: string, winnerId: string, allPicks: Record<string, string>) => {
+    if (!user) return;
+    void matchId; void winnerId; // used via allPicks
+    await setDoc(doc(getClientDb(), 'predictions', user.uid), {
+      uid:                 user.uid,
+      displayName:         user.displayName ?? '',
+      email:               user.email ?? '',
+      knockoutPredictions: allPicks,
+      updatedAt:           new Date().toISOString(),
+    }, { merge: true });
+  }, [user]);
+
   if (!bracket) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -142,6 +156,10 @@ function PredictionsContent() {
   const filledUsa  = USA_MATCHES.filter(m => usaMatchPreds[m.id] != null).length;
   const filledTop3 = [topThreePreds.pick1, topThreePreds.pick2, topThreePreds.pick3].filter(Boolean).length;
 
+  const knockoutMatchIds = Object.values(bracket.matches ?? {}).map(m => m.id);
+  const totalKnockout  = knockoutMatchIds.length;
+  const filledKnockout = knockoutMatchIds.filter(id => !!knockoutPreds[id]).length;
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       <div className="mb-4">
@@ -153,7 +171,7 @@ function PredictionsContent() {
       </div>
 
       {/* Sticky progress bar */}
-      <ProgressBar filledGroups={filledGroups} filledUsa={filledUsa} filledTop3={filledTop3} />
+      <ProgressBar filledGroups={filledGroups} filledUsa={filledUsa} filledTop3={filledTop3} filledKnockout={filledKnockout} totalKnockout={totalKnockout} />
 
       <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {GROUPS.map(group => (
@@ -205,6 +223,25 @@ function PredictionsContent() {
           onChange={handleTopThreeChange}
         />
       </div>
+
+      {/* Knockout bracket picks */}
+      {bracket.matches && Object.keys(bracket.matches).length > 0 && (
+        <div className="mt-10">
+          <h2 className="text-lg font-semibold text-slate-800 mb-1">Knockout Bracket</h2>
+          <p className="text-slate-500 text-sm mb-6">
+            Pick the winner of every knockout match. Locks {isKnockoutLocked() ? 'now' : 'Sun Jun 28 at 3 PM EDT'}.
+          </p>
+          <BracketSection
+            bracket={bracket}
+            picks={knockoutPreds}
+            locked={isKnockoutLocked()}
+            onPickChange={(matchId, winnerId, allPicks) => {
+              setKnockoutPreds(allPicks);
+              saveKnockoutPick(matchId, winnerId, allPicks);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -213,14 +250,17 @@ function PredictionsContent() {
 // Progress bar
 // ---------------------------------------------------------------------------
 
-function ProgressBar({ filledGroups, filledUsa, filledTop3 }: {
+function ProgressBar({ filledGroups, filledUsa, filledTop3, filledKnockout, totalKnockout }: {
   filledGroups: number;
   filledUsa: number;
   filledTop3: number;
+  filledKnockout: number;
+  totalKnockout: number;
 }) {
-  const total  = GROUPS.length + 3 + 3; // 18
-  const filled = filledGroups + filledUsa + filledTop3;
-  const pct    = Math.round((filled / total) * 100);
+  const base    = GROUPS.length + 3 + 3; // 18
+  const total   = base + totalKnockout;
+  const filled  = filledGroups + filledUsa + filledTop3 + filledKnockout;
+  const pct     = Math.round((filled / total) * 100);
   const allDone = filled === total;
 
   return (
@@ -233,7 +273,7 @@ function ProgressBar({ filledGroups, filledUsa, filledTop3 }: {
       ) : (
         <>
           <div className="flex items-center justify-between mb-1.5">
-            <div className="flex gap-3 text-xs text-slate-500">
+            <div className="flex gap-3 text-xs text-slate-500 flex-wrap">
               <span className={filledGroups === 12 ? 'text-green-600 font-medium' : ''}>
                 Groups {filledGroups}/12
               </span>
@@ -243,6 +283,11 @@ function ProgressBar({ filledGroups, filledUsa, filledTop3 }: {
               <span className={filledTop3 === 3 ? 'text-green-600 font-medium' : ''}>
                 Podium {filledTop3}/3
               </span>
+              {totalKnockout > 0 && (
+                <span className={filledKnockout === totalKnockout ? 'text-green-600 font-medium' : ''}>
+                  Bracket {filledKnockout}/{totalKnockout}
+                </span>
+              )}
             </div>
             <span className="text-sm font-semibold text-slate-700">{filled} / {total}</span>
           </div>
@@ -547,6 +592,140 @@ function TopThreeSection({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bracket section — helper functions (module-level so PredictionsContent can use them)
+// ---------------------------------------------------------------------------
+
+function getWinner(matchId: string, picks: Record<string, string>, matches: Record<string, Match>): string | null {
+  const actual = matches[matchId]?.result?.winnerId;
+  if (actual) return actual;
+  return picks[matchId] ?? null;
+}
+
+function resolveSlot(matchId: string, slot: 'home' | 'away', picks: Record<string, string>, matches: Record<string, Match>): string | null {
+  // R32 matches have teams stored directly on the match object
+  if (matchId.startsWith('r32')) {
+    const m = matches[matchId];
+    if (!m) return null;
+    return slot === 'home' ? (m.homeTeamId ?? null) : (m.awayTeamId ?? null);
+  }
+  const sources = BRACKET_SOURCES[matchId];
+  if (!sources) return null;
+  const [srcA, srcB] = sources;
+  const feederId = slot === 'home' ? srcA : srcB;
+  if (matchId === 'sf_3rd') {
+    return getLoser(feederId, picks, matches);
+  }
+  return getWinner(feederId, picks, matches);
+}
+
+function getLoser(matchId: string, picks: Record<string, string>, matches: Record<string, Match>): string | null {
+  const winner = getWinner(matchId, picks, matches);
+  if (!winner) return null;
+  const home = resolveSlot(matchId, 'home', picks, matches);
+  const away = resolveSlot(matchId, 'away', picks, matches);
+  if (home === winner) return away;
+  if (away === winner) return home;
+  return null;
+}
+
+function clearDescendants(changedMatchId: string, newWinnerId: string, currentPicks: Record<string, string>, matches: Record<string, Match>): Record<string, string> {
+  const updated = { ...currentPicks, [changedMatchId]: newWinnerId };
+  const allMatchIds = [
+    'r16_01','r16_02','r16_03','r16_04','r16_05','r16_06','r16_07','r16_08',
+    'qf_01','qf_02','qf_03','qf_04',
+    'sf_01','sf_02',
+    'final','sf_3rd',
+  ];
+  for (const mid of allMatchIds) {
+    if (!updated[mid]) continue;
+    const home = resolveSlot(mid, 'home', updated, matches);
+    const away = resolveSlot(mid, 'away', updated, matches);
+    if (updated[mid] !== home && updated[mid] !== away) {
+      delete updated[mid];
+    }
+  }
+  return updated;
+}
+
+function BracketSection({ bracket, picks, locked, onPickChange }: {
+  bracket: BracketConfig;
+  picks: Record<string, string>;
+  locked: boolean;
+  onPickChange: (matchId: string, winnerId: string, allPicks: Record<string, string>) => void;
+}) {
+  const matches = bracket.matches ?? {};
+
+  return (
+    <div className="space-y-8">
+      {BRACKET_ROUNDS.map(({ stage, label, matchIds }) => {
+        const pickable = matchIds.filter(mid => {
+          const home = resolveSlot(mid, 'home', picks, matches);
+          const away = resolveSlot(mid, 'away', picks, matches);
+          return home || away;
+        });
+        if (pickable.length === 0) return null;
+
+        return (
+          <div key={stage}>
+            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">{label}</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {matchIds.map(mid => {
+                const home = resolveSlot(mid, 'home', picks, matches);
+                const away = resolveSlot(mid, 'away', picks, matches);
+                if (!home && !away) return null;
+                const actualWinner = matches[mid]?.result?.winnerId ?? null;
+                const userPick     = picks[mid] ?? null;
+                const currentWinner = actualWinner ?? userPick;
+                const isActual     = !!actualWinner;
+
+                const handlePick = (teamId: string) => {
+                  if (locked || isActual) return;
+                  const newPicks = clearDescendants(mid, teamId, picks, matches);
+                  onPickChange(mid, teamId, newPicks);
+                };
+
+                return (
+                  <div key={mid} className="bg-white border border-sky-100 rounded-2xl p-3">
+                    {isActual && <p className="text-xs text-slate-400 mb-2">Final result</p>}
+                    <div className="flex flex-col gap-1.5">
+                      {(['home', 'away'] as const).map(slot => {
+                        const teamId = slot === 'home' ? home : away;
+                        const team   = teamId ? bracket.teams[teamId] : null;
+                        const isPicked = currentWinner === teamId;
+                        return (
+                          <button
+                            key={slot}
+                            disabled={locked || isActual || !teamId}
+                            onClick={() => teamId && handlePick(teamId)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all text-left ${
+                              !teamId
+                                ? 'bg-slate-50 text-slate-300 cursor-default'
+                                : isPicked
+                                  ? isActual
+                                    ? 'bg-green-100 text-green-700 font-semibold'
+                                    : 'bg-sky-500 text-white font-semibold'
+                                  : 'bg-sky-50 text-slate-600 hover:bg-sky-100 disabled:hover:bg-sky-50'
+                            }`}
+                          >
+                            <span className="text-base">{team?.flagEmoji ?? '🏳️'}</span>
+                            <span>{team?.name ?? 'TBD'}</span>
+                            {isPicked && !isActual && locked && <span className="ml-auto text-xs opacity-70">🔒</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
