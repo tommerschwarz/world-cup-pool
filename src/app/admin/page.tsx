@@ -384,7 +384,7 @@ function UsersTab({
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const scoreMap       = Object.fromEntries(scores.map(s => [s.uid, s]));
-  const totalKnockout  = Object.keys(bracket?.matches ?? {}).length;
+  const totalKnockout  = BRACKET_ROUNDS.reduce((sum, r) => sum + r.matchIds.length, 0); // 32
 
   const toggle = async (uid: string, displayName: string, field: 'prizeEligible' | 'paidBuyIn', current: boolean) => {
     setSaving(`${uid}:${field}`);
