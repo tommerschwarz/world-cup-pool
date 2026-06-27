@@ -113,7 +113,7 @@ function AdminContent() {
         />
       )}
       {tab === 'users' && (
-        <UsersTab users={allPreds} scores={scores} authFetch={authFetch} setStatus={setStatus} />
+        <UsersTab users={allPreds} scores={scores} bracket={bracket} authFetch={authFetch} setStatus={setStatus} />
       )}
       {tab === 'picks' && bracket && (
         <ManualPicksTab bracket={bracket} users={allPreds} authFetch={authFetch} setStatus={setStatus} />
@@ -361,27 +361,30 @@ function GroupResultsTab({
 // Users tab
 // ---------------------------------------------------------------------------
 
-function pickCompletion(u: UserPredictions) {
+function pickCompletion(u: UserPredictions, totalKnockout: number) {
   const groups = GROUPS.filter(g => {
     const p = u.groupPredictions?.[g];
     return p && p.advancingTeamIds.length === 2 && p.topSeedId;
   }).length;
-  const usa  = USA_MATCHES.filter(m => u.usaMatchPredictions?.[m.id] != null).length;
-  const top3 = [u.topThreePredictions?.pick1, u.topThreePredictions?.pick2, u.topThreePredictions?.pick3]
+  const usa      = USA_MATCHES.filter(m => u.usaMatchPredictions?.[m.id] != null).length;
+  const top3     = [u.topThreePredictions?.pick1, u.topThreePredictions?.pick2, u.topThreePredictions?.pick3]
     .filter(Boolean).length;
-  return { groups, usa, top3 };
+  const bracket  = Object.keys(u.knockoutPredictions ?? {}).length;
+  return { groups, usa, top3, bracket, totalKnockout };
 }
 
 function UsersTab({
-  users, scores, authFetch, setStatus,
+  users, scores, bracket, authFetch, setStatus,
 }: {
   users: UserPredictions[];
   scores: UserScore[];
+  bracket: BracketConfig | null;
   authFetch: (url: string, body: object) => Promise<unknown>;
   setStatus: (s: string) => void;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
-  const scoreMap = Object.fromEntries(scores.map(s => [s.uid, s]));
+  const scoreMap       = Object.fromEntries(scores.map(s => [s.uid, s]));
+  const totalKnockout  = Object.keys(bracket?.matches ?? {}).length;
 
   const toggle = async (uid: string, displayName: string, field: 'prizeEligible' | 'paidBuyIn', current: boolean) => {
     setSaving(`${uid}:${field}`);
@@ -416,7 +419,7 @@ function UsersTab({
             const score         = scoreMap[u.uid];
             const prizeEligible = score?.prizeEligible ?? false;
             const paidBuyIn     = score?.paidBuyIn ?? false;
-            const cp            = pickCompletion(u);
+            const cp            = pickCompletion(u, totalKnockout);
             const allDone       = cp.groups === 12 && cp.usa === 3 && cp.top3 === 3;
             return (
               <tr key={u.uid} className="hover:bg-sky-50/50">
@@ -435,6 +438,11 @@ function UsersTab({
                     <div className={cp.top3 === 3 ? 'text-green-600' : 'text-amber-500'}>
                       Top 3: {cp.top3}/3
                     </div>
+                    {cp.totalKnockout > 0 && (
+                      <div className={cp.bracket === cp.totalKnockout ? 'text-green-600' : 'text-amber-500'}>
+                        Bracket: {cp.bracket}/{cp.totalKnockout}
+                      </div>
+                    )}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-slate-800">
