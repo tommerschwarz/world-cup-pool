@@ -313,7 +313,7 @@ function GroupCard({
   group: string;
   teams: Team[];
   prediction?: GroupPrediction;
-  groupResult?: { finalStandings: string[] };
+  groupResult?: { finalStandings: string[]; thirdAdvances?: boolean };
   saving: boolean;
   justSaved: boolean;
   onChange: (pred: GroupPrediction) => void;
@@ -324,7 +324,7 @@ function GroupCard({
 
   // Determine accuracy class once the group result is known
   const resultKnown = !!groupResult?.finalStandings?.length;
-  const actualAdvancers = resultKnown ? new Set(groupResult!.finalStandings.slice(0, 2)) : null;
+  const actualAdvancers = resultKnown ? new Set(groupResult!.finalStandings.slice(0, groupResult!.thirdAdvances ? 3 : 2)) : null;
   const actualTopSeed   = resultKnown ? groupResult!.finalStandings[0] : null;
 
   const toggleAdvancing = (teamId: string) => {
