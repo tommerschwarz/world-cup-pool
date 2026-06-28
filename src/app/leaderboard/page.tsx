@@ -269,19 +269,19 @@ function PickDistBar({ matchId, bracket, predictions }: {
           {/* Transparent hover targets sitting above the bar */}
           {homeCount > 0 && (
             <div className="group/home absolute inset-y-0 left-0 z-10 cursor-default" style={{ width: `${homePct}%` }}>
-              <div className="invisible group-hover/home:visible absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-2 shadow-lg pointer-events-none whitespace-nowrap">
-                <div className="font-semibold text-slate-300 mb-1">{homeTeam?.shortName}</div>
+              <div className="invisible group-hover/home:visible absolute bottom-full left-0 mb-2 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-2 shadow-lg pointer-events-none w-36">
+                <div className="font-semibold text-slate-300 mb-1">{homeTeam?.shortName} ({homeCount})</div>
                 {homePickers.map(n => <div key={n}>{n}</div>)}
-                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
+                <div className="absolute top-full left-4 border-4 border-transparent border-t-slate-800" />
               </div>
             </div>
           )}
           {awayCount > 0 && (
             <div className="group/away absolute inset-y-0 right-0 z-10 cursor-default" style={{ width: `${awayPct}%` }}>
-              <div className="invisible group-hover/away:visible absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-2 shadow-lg pointer-events-none whitespace-nowrap">
-                <div className="font-semibold text-slate-300 mb-1">{awayTeam?.shortName}</div>
+              <div className="invisible group-hover/away:visible absolute bottom-full right-0 mb-2 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-2 shadow-lg pointer-events-none w-36">
+                <div className="font-semibold text-slate-300 mb-1">{awayTeam?.shortName} ({awayCount})</div>
                 {awayPickers.map(n => <div key={n}>{n}</div>)}
-                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
+                <div className="absolute top-full right-4 border-4 border-transparent border-t-slate-800" />
               </div>
             </div>
           )}
