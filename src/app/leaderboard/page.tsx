@@ -239,6 +239,8 @@ function PickDistBar({ matchId, bracket, predictions }: {
   const awayTeam = awayId ? bracket.teams[awayId] : null;
   const actualWinner = matches[matchId]?.result?.winnerId ?? null;
 
+  const [hoveredSide, setHoveredSide] = useState<'home' | 'away' | null>(null);
+
   const homePickers: string[] = [];
   const awayPickers: string[] = [];
   for (const pred of predictions) {
@@ -266,24 +268,37 @@ function PickDistBar({ matchId, bracket, predictions }: {
 
         {/* Bar + hover tooltips */}
         <div className="flex-1 relative">
-          {/* Transparent hover targets sitting above the bar */}
-          {homeCount > 0 && (
-            <div className="group/home absolute inset-y-0 left-0 z-10 cursor-default" style={{ width: `${homePct}%` }}>
-              <div className="invisible group-hover/home:visible absolute bottom-full left-0 mb-2 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-2 shadow-lg pointer-events-none w-36">
-                <div className="font-semibold text-slate-300 mb-1">{homeTeam?.shortName} ({homeCount})</div>
-                {homePickers.map(n => <div key={n}>{n}</div>)}
-                <div className="absolute top-full left-4 border-4 border-transparent border-t-slate-800" />
-              </div>
+          {/* Tooltips anchored to bar container edges — never overflow viewport */}
+          {hoveredSide === 'home' && homeCount > 0 && (
+            <div className="absolute bottom-full left-0 mb-2 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-2 shadow-lg pointer-events-none w-36 z-20">
+              <div className="font-semibold text-slate-300 mb-1">{homeTeam?.shortName} ({homeCount})</div>
+              {homePickers.map(n => <div key={n}>{n}</div>)}
+              <div className="absolute top-full left-4 border-4 border-transparent border-t-slate-800" />
             </div>
           )}
-          {awayCount > 0 && (
-            <div className="group/away absolute inset-y-0 right-0 z-10 cursor-default" style={{ width: `${awayPct}%` }}>
-              <div className="invisible group-hover/away:visible absolute bottom-full right-0 mb-2 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-2 shadow-lg pointer-events-none w-36">
-                <div className="font-semibold text-slate-300 mb-1">{awayTeam?.shortName} ({awayCount})</div>
-                {awayPickers.map(n => <div key={n}>{n}</div>)}
-                <div className="absolute top-full right-4 border-4 border-transparent border-t-slate-800" />
-              </div>
+          {hoveredSide === 'away' && awayCount > 0 && (
+            <div className="absolute bottom-full right-0 mb-2 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-2 shadow-lg pointer-events-none w-36 z-20">
+              <div className="font-semibold text-slate-300 mb-1">{awayTeam?.shortName} ({awayCount})</div>
+              {awayPickers.map(n => <div key={n}>{n}</div>)}
+              <div className="absolute top-full right-4 border-4 border-transparent border-t-slate-800" />
             </div>
+          )}
+          {/* Transparent hover targets */}
+          {homeCount > 0 && (
+            <div
+              className="absolute inset-y-0 left-0 z-10 cursor-default"
+              style={{ width: `${homePct}%` }}
+              onMouseEnter={() => setHoveredSide('home')}
+              onMouseLeave={() => setHoveredSide(null)}
+            />
+          )}
+          {awayCount > 0 && (
+            <div
+              className="absolute inset-y-0 right-0 z-10 cursor-default"
+              style={{ width: `${awayPct}%` }}
+              onMouseEnter={() => setHoveredSide('away')}
+              onMouseLeave={() => setHoveredSide(null)}
+            />
           )}
           {/* Visual bar */}
           <div className="h-7 rounded-full overflow-hidden flex bg-slate-100">
