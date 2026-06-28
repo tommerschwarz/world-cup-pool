@@ -239,12 +239,16 @@ function PickDistBar({ matchId, bracket, predictions }: {
   const awayTeam = awayId ? bracket.teams[awayId] : null;
   const actualWinner = matches[matchId]?.result?.winnerId ?? null;
 
-  let homeCount = 0, awayCount = 0;
+  const homePickers: string[] = [];
+  const awayPickers: string[] = [];
   for (const pred of predictions) {
     const pick = pred.knockoutPredictions?.[matchId];
-    if (pick === homeId) homeCount++;
-    else if (pick === awayId) awayCount++;
+    const name = pred.displayName?.split(' ')[0] || pred.email.split('@')[0];
+    if (pick === homeId) homePickers.push(name);
+    else if (pick === awayId) awayPickers.push(name);
   }
+  const homeCount = homePickers.length;
+  const awayCount = awayPickers.length;
   const total = homeCount + awayCount;
   const homePct = total > 0 ? Math.round((homeCount / total) * 100) : 50;
   const awayPct = 100 - homePct;
@@ -259,24 +263,49 @@ function PickDistBar({ matchId, bracket, predictions }: {
           <span className="text-xs font-medium text-slate-600 truncate">{homeTeam?.shortName ?? '?'}</span>
           <span className="text-base">{homeTeam?.flagEmoji ?? '🏳️'}</span>
         </div>
-        <div className="flex-1 h-7 rounded-full overflow-hidden flex bg-slate-100">
-          {homePct > 0 && (
-            <div
-              className={`h-full flex items-center justify-end pr-1.5 text-xs font-bold text-white ${homeColor} transition-all`}
-              style={{ width: `${homePct}%` }}
-            >
-              {homeCount > 0 && homeCount}
+
+        {/* Bar + hover tooltips */}
+        <div className="flex-1 relative">
+          {/* Transparent hover targets sitting above the bar */}
+          {homeCount > 0 && (
+            <div className="group/home absolute inset-y-0 left-0 z-10 cursor-default" style={{ width: `${homePct}%` }}>
+              <div className="invisible group-hover/home:visible absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-2 shadow-lg pointer-events-none whitespace-nowrap">
+                <div className="font-semibold text-slate-300 mb-1">{homeTeam?.shortName}</div>
+                {homePickers.map(n => <div key={n}>{n}</div>)}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
+              </div>
             </div>
           )}
-          {awayPct > 0 && (
-            <div
-              className={`h-full flex items-center justify-start pl-1.5 text-xs font-bold text-white ${awayColor} transition-all`}
-              style={{ width: `${awayPct}%` }}
-            >
-              {awayCount > 0 && awayCount}
+          {awayCount > 0 && (
+            <div className="group/away absolute inset-y-0 right-0 z-10 cursor-default" style={{ width: `${awayPct}%` }}>
+              <div className="invisible group-hover/away:visible absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-2 shadow-lg pointer-events-none whitespace-nowrap">
+                <div className="font-semibold text-slate-300 mb-1">{awayTeam?.shortName}</div>
+                {awayPickers.map(n => <div key={n}>{n}</div>)}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
+              </div>
             </div>
           )}
+          {/* Visual bar */}
+          <div className="h-7 rounded-full overflow-hidden flex bg-slate-100">
+            {homePct > 0 && (
+              <div
+                className={`h-full flex items-center justify-end pr-1.5 text-xs font-bold text-white ${homeColor}`}
+                style={{ width: `${homePct}%` }}
+              >
+                {homeCount > 0 && homeCount}
+              </div>
+            )}
+            {awayPct > 0 && (
+              <div
+                className={`h-full flex items-center justify-start pl-1.5 text-xs font-bold text-white ${awayColor}`}
+                style={{ width: `${awayPct}%` }}
+              >
+                {awayCount > 0 && awayCount}
+              </div>
+            )}
+          </div>
         </div>
+
         <div className="flex items-center gap-1 w-24 shrink-0">
           <span className="text-base">{awayTeam?.flagEmoji ?? '🏳️'}</span>
           <span className="text-xs font-medium text-slate-600 truncate">{awayTeam?.shortName ?? '?'}</span>
