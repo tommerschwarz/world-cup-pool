@@ -116,7 +116,7 @@ export const STAGE_LABELS: Record<string, string> = {
 
 // All group picks lock at tournament kickoff — Jun 11 12:00 PM PDT (19:00 UTC).
 // The 5-min buffer in isGroupLocked means the UI locks at 11:55 AM PDT.
-const TOURNAMENT_KICKOFF = '2026-06-29T23:59:00Z';
+const TOURNAMENT_KICKOFF = '2026-06-11T19:00:00Z';
 export const GROUP_LOCK_TIMES: Record<string, string> = {
   A: TOURNAMENT_KICKOFF,
   B: TOURNAMENT_KICKOFF,
@@ -173,7 +173,7 @@ export function isUsaMatchLocked(matchId: string): boolean {
 // ---------------------------------------------------------------------------
 
 // First R32 match: Sun Jun 28 3 PM EDT = 19:00 UTC
-export const KNOCKOUT_LOCK_TIME = '2026-06-29T23:59:00Z';
+export const KNOCKOUT_LOCK_TIME = '2026-06-28T19:00:00Z';
 export function isKnockoutLocked(): boolean {
   return Date.now() >= new Date(KNOCKOUT_LOCK_TIME).getTime() - 5 * 60 * 1000;
 }
