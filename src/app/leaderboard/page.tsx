@@ -6,9 +6,9 @@ import { getClientDb } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { calculateScore, SCORING } from '@/lib/scoring';
-import { GROUPS, getGroupTeams, isTournamentLocked } from '@/lib/wc2026-data';
+import { GROUPS, getGroupTeams, isTournamentLocked, BRACKET_SOURCES, BRACKET_ROUNDS } from '@/lib/wc2026-data';
 import type {
-  UserScore, UserPredictions, BracketConfig,
+  UserScore, UserPredictions, BracketConfig, Match,
   LeaderboardEntry, SimulatedGroupResult, GroupPrediction,
 } from '@/lib/types';
 
@@ -72,7 +72,7 @@ function LeaderboardContent() {
       </div>
 
       {tab === 'standings' && (
-        <StandingsTab scores={scores} currentUid={user?.uid ?? ''} />
+        <StandingsTab scores={scores} currentUid={user?.uid ?? ''} predictions={allPredictions} bracket={bracket} />
       )}
       {(tab === 'picks' || tab === 'whatif') && !isTournamentLocked() && (
         <PicksHidden />
@@ -108,8 +108,14 @@ function PicksHidden() {
 // Standings
 // ---------------------------------------------------------------------------
 
-function StandingsTab({ scores, currentUid }: { scores: UserScore[]; currentUid: string }) {
+function StandingsTab({ scores, currentUid, predictions, bracket }: {
+  scores: UserScore[];
+  currentUid: string;
+  predictions: UserPredictions[];
+  bracket: BracketConfig | null;
+}) {
   const sorted = [...scores].sort((a, b) => b.total - a.total);
+  const champMap = Object.fromEntries(predictions.map(p => [p.uid, p.knockoutPredictions?.final ?? null]));
 
   return (
     <div className="bg-white rounded-2xl border border-sky-100 overflow-hidden">
@@ -131,11 +137,14 @@ function StandingsTab({ scores, currentUid }: { scores: UserScore[]; currentUid:
           )}
           {sorted.map((s, i) => {
             const isMe = s.uid === currentUid;
+            const champId = champMap[s.uid];
+            const champFlag = champId ? bracket?.teams[champId]?.flagEmoji : null;
             return (
               <tr key={s.uid} className={`transition-colors ${isMe ? 'bg-sky-50' : 'hover:bg-sky-50/60'}`}>
                 <td className="px-4 py-3 text-slate-400 font-mono tabular-nums">{i + 1}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
+                    {champFlag && <span title="Picked to win" className="text-base">{champFlag}</span>}
                     <span className={`font-medium ${isMe ? 'text-sky-500' : 'text-slate-700'}`}>
                       {s.displayName || s.email}
                     </span>
@@ -192,6 +201,142 @@ function heatBg(pct: number, dog: boolean): string {
   return               lerpColor(white, good, (pct - 0.5) * 2);
 }
 
+// ---------------------------------------------------------------------------
+// Knockout distribution helpers
+// ---------------------------------------------------------------------------
+
+function getActualTeamForSlot(matchId: string, slot: 'home' | 'away', matches: Record<string, Match>): string | null {
+  if (matchId.startsWith('r32')) {
+    const m = matches[matchId];
+    return slot === 'home' ? (m?.homeTeamId ?? null) : (m?.awayTeamId ?? null);
+  }
+  const sources = BRACKET_SOURCES[matchId];
+  if (!sources) return null;
+  const [srcA, srcB] = sources;
+  const feederId = slot === 'home' ? srcA : srcB;
+  if (matchId === 'sf_3rd') {
+    const m = matches[feederId];
+    const winner = m?.result?.winnerId ?? null;
+    if (!winner) return null;
+    const h = getActualTeamForSlot(feederId, 'home', matches);
+    const a = getActualTeamForSlot(feederId, 'away', matches);
+    return h === winner ? a : h;
+  }
+  return matches[feederId]?.result?.winnerId ?? null;
+}
+
+function PickDistBar({ matchId, bracket, predictions }: {
+  matchId: string;
+  bracket: BracketConfig;
+  predictions: UserPredictions[];
+}) {
+  const matches = bracket.matches ?? {};
+  const homeId = getActualTeamForSlot(matchId, 'home', matches);
+  const awayId = getActualTeamForSlot(matchId, 'away', matches);
+  if (!homeId && !awayId) return null;
+
+  const homeTeam = homeId ? bracket.teams[homeId] : null;
+  const awayTeam = awayId ? bracket.teams[awayId] : null;
+  const actualWinner = matches[matchId]?.result?.winnerId ?? null;
+
+  let homeCount = 0, awayCount = 0;
+  for (const pred of predictions) {
+    const pick = pred.knockoutPredictions?.[matchId];
+    if (pick === homeId) homeCount++;
+    else if (pick === awayId) awayCount++;
+  }
+  const total = homeCount + awayCount;
+  const homePct = total > 0 ? Math.round((homeCount / total) * 100) : 50;
+  const awayPct = 100 - homePct;
+
+  const homeColor = actualWinner === homeId ? 'bg-green-500' : actualWinner && actualWinner !== homeId ? 'bg-slate-300' : 'bg-sky-500';
+  const awayColor = actualWinner === awayId ? 'bg-green-500' : actualWinner && actualWinner !== awayId ? 'bg-slate-300' : 'bg-rose-400';
+
+  return (
+    <div className="bg-white border border-sky-100 rounded-xl p-3">
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 w-24 justify-end shrink-0">
+          <span className="text-xs font-medium text-slate-600 truncate">{homeTeam?.shortName ?? '?'}</span>
+          <span className="text-base">{homeTeam?.flagEmoji ?? '🏳️'}</span>
+        </div>
+        <div className="flex-1 h-7 rounded-full overflow-hidden flex bg-slate-100">
+          {homePct > 0 && (
+            <div
+              className={`h-full flex items-center justify-end pr-1.5 text-xs font-bold text-white ${homeColor} transition-all`}
+              style={{ width: `${homePct}%` }}
+            >
+              {homeCount > 0 && homeCount}
+            </div>
+          )}
+          {awayPct > 0 && (
+            <div
+              className={`h-full flex items-center justify-start pl-1.5 text-xs font-bold text-white ${awayColor} transition-all`}
+              style={{ width: `${awayPct}%` }}
+            >
+              {awayCount > 0 && awayCount}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1 w-24 shrink-0">
+          <span className="text-base">{awayTeam?.flagEmoji ?? '🏳️'}</span>
+          <span className="text-xs font-medium text-slate-600 truncate">{awayTeam?.shortName ?? '?'}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FinalistTable({ predictions, scores, bracket }: {
+  predictions: UserPredictions[];
+  scores: UserScore[];
+  bracket: BracketConfig;
+}) {
+  const scoreMap = Object.fromEntries(scores.map(s => [s.uid, s.total]));
+  const sorted = [...predictions].sort((a, b) => (scoreMap[b.uid] ?? 0) - (scoreMap[a.uid] ?? 0));
+  const teams = bracket.teams;
+
+  const teamCell = (id: string | null | undefined) => {
+    if (!id) return <span className="text-slate-300">—</span>;
+    const t = teams[id];
+    return <span className="whitespace-nowrap">{t?.flagEmoji} {t?.shortName}</span>;
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-sky-100 overflow-auto">
+      <table className="text-xs min-w-max w-full">
+        <thead>
+          <tr className="border-b border-sky-100 text-slate-400">
+            <th className="px-4 py-3 text-left font-normal">Player</th>
+            <th className="px-4 py-3 text-center font-normal">🥇 Champion</th>
+            <th className="px-4 py-3 text-center font-normal">🥈 Runner-up</th>
+            <th className="px-4 py-3 text-center font-normal">🥉 3rd Place</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-sky-100/30">
+          {sorted.map(u => {
+            const ko = u.knockoutPredictions ?? {};
+            const champion  = ko.final ?? null;
+            const sf1pick   = ko.sf_01 ?? null;
+            const sf2pick   = ko.sf_02 ?? null;
+            const runnerUp  = champion === sf1pick ? sf2pick : champion === sf2pick ? sf1pick : null;
+            const third     = ko.sf_3rd ?? null;
+            return (
+              <tr key={u.uid} className="hover:bg-sky-50/50">
+                <td className="px-4 py-2.5 font-medium text-slate-700">
+                  {u.displayName?.split(' ')[0] || u.email.split('@')[0]}
+                </td>
+                <td className="px-4 py-2.5 text-center text-slate-600">{teamCell(champion)}</td>
+                <td className="px-4 py-2.5 text-center text-slate-600">{teamCell(runnerUp)}</td>
+                <td className="px-4 py-2.5 text-center text-slate-600">{teamCell(third)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function PoolPicksTab({
   bracket, predictions, scores, currentUid,
 }: {
@@ -200,16 +345,67 @@ function PoolPicksTab({
   scores: UserScore[];
   currentUid: string;
 }) {
+  const [view, setView]       = useState<'groups' | 'bracket'>('groups');
   const [heatmap, setHeatmap] = useState(false);
   const [dogMode, setDogMode] = useState(false);
 
   const scoreMap = Object.fromEntries(scores.map(s => [s.uid, s.total]));
   const users    = [...predictions].sort((a, b) => (scoreMap[b.uid] ?? 0) - (scoreMap[a.uid] ?? 0));
+  const hasKnockout = Object.keys(bracket.matches ?? {}).length > 0;
 
   const legendSteps = [0, 0.25, 0.5, 0.75, 1];
 
   return (
     <div>
+      {/* Top-level view toggle */}
+      {hasKnockout && (
+        <div className="flex gap-1 bg-white border border-sky-100 rounded-xl p-1 w-fit mb-4">
+          <button
+            onClick={() => setView('groups')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${view === 'groups' ? 'bg-sky-500 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Groups
+          </button>
+          <button
+            onClick={() => setView('bracket')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${view === 'bracket' ? 'bg-sky-500 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Bracket
+          </button>
+        </div>
+      )}
+
+      {/* Bracket view */}
+      {view === 'bracket' && (
+        <div className="space-y-8">
+          {BRACKET_ROUNDS.map(({ stage, label, matchIds }) => {
+            const visible = matchIds.filter(mid => {
+              const h = getActualTeamForSlot(mid, 'home', bracket.matches ?? {});
+              const a = getActualTeamForSlot(mid, 'away', bracket.matches ?? {});
+              return h || a;
+            });
+            if (visible.length === 0) return null;
+            return (
+              <div key={stage}>
+                <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">{label}</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {visible.map(mid => (
+                    <PickDistBar key={mid} matchId={mid} bracket={bracket} predictions={predictions} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          <div>
+            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Finalist Picks</h3>
+            <FinalistTable predictions={predictions} scores={scores} bracket={bracket} />
+          </div>
+        </div>
+      )}
+
+      {/* Groups view */}
+      {view === 'groups' && <>
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <span className="text-xs text-slate-400 mr-1">View:</span>
@@ -341,6 +537,7 @@ function PoolPicksTab({
           </tbody>
         </table>
       </div>
+      </>}
     </div>
   );
 }
