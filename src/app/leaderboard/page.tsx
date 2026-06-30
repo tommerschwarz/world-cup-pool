@@ -5,11 +5,11 @@ import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { calculateScore, calculateMaxScore, SCORING } from '@/lib/scoring';
+import { calculateScore, calculateMaxScore, stageFromMatchId, SCORING } from '@/lib/scoring';
 import { GROUPS, getGroupTeams, isTournamentLocked, BRACKET_SOURCES, BRACKET_ROUNDS } from '@/lib/wc2026-data';
 import type {
-  UserScore, UserPredictions, BracketConfig, Match,
-  LeaderboardEntry, SimulatedGroupResult, GroupPrediction,
+  UserScore, UserPredictions, BracketConfig, Match, Team,
+  LeaderboardEntry, SimulatedGroupResult, GroupPrediction, Stage,
 } from '@/lib/types';
 
 export default function LeaderboardPage() {
@@ -686,6 +686,42 @@ function GroupPickCell({
 }
 
 // ---------------------------------------------------------------------------
+// What If? — bracket simulation helpers
+// ---------------------------------------------------------------------------
+
+function buildProjectedMatchesForSim(
+  realMatches: Record<string, Match>,
+  simWinners: Record<string, string>,
+): Record<string, Match> {
+  const projected = { ...realMatches };
+  for (const [matchId, winnerId] of Object.entries(simWinners)) {
+    const stage = (stageFromMatchId(matchId) ?? 'R32') as Stage;
+    projected[matchId] = {
+      ...(projected[matchId] ?? {
+        id: matchId,
+        homeTeamId: null,
+        awayTeamId: null,
+        stage,
+        startTime: '',
+        matchNumber: 0,
+      }),
+      result: { homeGoals: 0, awayGoals: 0, winnerId },
+    };
+  }
+  return projected;
+}
+
+function getDownstreamMatchIds(matchId: string): string[] {
+  const result: string[] = [];
+  for (const [target, sources] of Object.entries(BRACKET_SOURCES)) {
+    if ((sources as readonly string[]).includes(matchId)) {
+      result.push(target, ...getDownstreamMatchIds(target));
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // What If? simulator
 // ---------------------------------------------------------------------------
 
@@ -696,13 +732,16 @@ function WhatIfTab({
   predictions: UserPredictions[];
   scores: UserScore[];
 }) {
-  const [simResults, setSimResults] = useState<Record<string, SimulatedGroupResult>>({});
+  const [simResults, setSimResults]             = useState<Record<string, SimulatedGroupResult>>({});
+  const [simBracketWinners, setSimBracketWinners] = useState<Record<string, string>>({});
 
-  // Groups without official results yet
-  const openGroups = GROUPS.filter(g => !bracket.groupResults?.[g]);
+  const openGroups   = GROUPS.filter(g => !bracket.groupResults?.[g]);
+  const realMatches  = bracket.matches ?? {};
+  const projectedMatches = buildProjectedMatchesForSim(realMatches, simBracketWinners);
 
   const projectedBracket: BracketConfig = {
     ...bracket,
+    matches: projectedMatches,
     groupResults: {
       ...(bracket.groupResults ?? {}),
       ...Object.fromEntries(
@@ -731,43 +770,87 @@ function WhatIfTab({
     [...scores].sort((a, b) => b.total - a.total).map((s, i) => [s.uid, i + 1])
   );
 
-  const simCount = Object.keys(simResults).length;
+  const simGroupCount   = Object.keys(simResults).length;
+  const simBracketCount = Object.keys(simBracketWinners).length;
+  const totalSimCount   = simGroupCount + simBracketCount;
+
+  const hasOpenBracketMatches = BRACKET_ROUNDS.some(({ matchIds }) =>
+    matchIds.some(mid => {
+      if (realMatches[mid]?.result?.winnerId) return false;
+      const home = getActualTeamForSlot(mid, 'home', projectedMatches);
+      const away = getActualTeamForSlot(mid, 'away', projectedMatches);
+      return home && away;
+    })
+  );
+
+  const handleSetBracketWinner = (matchId: string, winnerId: string | null) => {
+    setSimBracketWinners(prev => {
+      const next = { ...prev };
+      for (const mid of getDownstreamMatchIds(matchId)) delete next[mid];
+      if (winnerId) next[matchId] = winnerId;
+      else delete next[matchId];
+      return next;
+    });
+  };
+
+  const simLabel = [
+    simGroupCount   > 0 && `${simGroupCount} group${simGroupCount !== 1 ? 's' : ''}`,
+    simBracketCount > 0 && `${simBracketCount} match${simBracketCount !== 1 ? 'es' : ''}`,
+  ].filter(Boolean).join(', ');
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-      {/* Left — group simulators */}
+      {/* Left — simulators */}
       <div>
-        <h2 className="text-base font-semibold text-slate-600 mb-4">Simulate group outcomes</h2>
-        {openGroups.length === 0 && (
-          <p className="text-slate-400 text-sm">All group results are in — nothing to simulate.</p>
+        {/* Group simulators */}
+        {openGroups.length > 0 && (
+          <>
+            <h2 className="text-base font-semibold text-slate-600 mb-4">Simulate group outcomes</h2>
+            <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
+              {openGroups.map(group => (
+                <SimGroupRow
+                  key={group}
+                  group={group}
+                  teams={getGroupTeams(bracket.teams, group)}
+                  value={simResults[group]}
+                  onChange={sim => {
+                    if (!sim) {
+                      setSimResults(prev => { const n = { ...prev }; delete n[group]; return n; });
+                    } else {
+                      setSimResults(prev => ({ ...prev, [group]: sim }));
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          </>
         )}
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-          {openGroups.map(group => (
-            <SimGroupRow
-              key={group}
-              group={group}
-              teams={getGroupTeams(bracket.teams, group)}
-              value={simResults[group]}
-              onChange={sim => {
-                if (!sim) {
-                  setSimResults(prev => { const n = { ...prev }; delete n[group]; return n; });
-                } else {
-                  setSimResults(prev => ({ ...prev, [group]: sim }));
-                }
-              }}
+
+        {/* Bracket simulators */}
+        {hasOpenBracketMatches && (
+          <>
+            {openGroups.length > 0 && <div className="border-t border-sky-100 my-5" />}
+            <h2 className="text-base font-semibold text-slate-600 mb-4">Simulate bracket results</h2>
+            <SimBracketSection
+              bracket={bracket}
+              projectedMatches={projectedMatches}
+              simWinners={simBracketWinners}
+              onSetWinner={handleSetBracketWinner}
             />
-          ))}
-        </div>
+          </>
+        )}
+
+        {openGroups.length === 0 && !hasOpenBracketMatches && (
+          <p className="text-slate-400 text-sm">All results are in — nothing to simulate.</p>
+        )}
       </div>
 
       {/* Right — projected standings */}
       <div>
         <h2 className="text-base font-semibold text-slate-600 mb-4">
           Projected standings
-          {simCount > 0 && (
-            <span className="ml-2 text-xs text-sky-500 font-normal">
-              ({simCount} group{simCount !== 1 ? 's' : ''} simulated)
-            </span>
+          {totalSimCount > 0 && (
+            <span className="ml-2 text-xs text-sky-500 font-normal">({simLabel} simulated)</span>
           )}
         </h2>
         <div className="bg-white rounded-2xl border border-sky-100 overflow-hidden">
@@ -812,15 +895,102 @@ function WhatIfTab({
             </tbody>
           </table>
         </div>
-        {simCount > 0 && (
+        {totalSimCount > 0 && (
           <button
-            onClick={() => setSimResults({})}
+            onClick={() => { setSimResults({}); setSimBracketWinners({}); }}
             className="mt-3 text-xs text-slate-400 hover:text-slate-600 transition-colors"
           >
             ✕ Clear all
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function SimBracketSection({
+  bracket, projectedMatches, simWinners, onSetWinner,
+}: {
+  bracket: BracketConfig;
+  projectedMatches: Record<string, Match>;
+  simWinners: Record<string, string>;
+  onSetWinner: (matchId: string, winnerId: string | null) => void;
+}) {
+  return (
+    <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-1">
+      {BRACKET_ROUNDS.map(({ stage, label, matchIds }) => {
+        const simulatable = matchIds.filter(mid => {
+          if (bracket.matches[mid]?.result?.winnerId) return false;
+          const home = getActualTeamForSlot(mid, 'home', projectedMatches);
+          const away = getActualTeamForSlot(mid, 'away', projectedMatches);
+          return home && away;
+        });
+        if (!simulatable.length) return null;
+        return (
+          <div key={stage}>
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">{label}</h4>
+            <div className="space-y-1.5">
+              {simulatable.map(mid => {
+                const homeId   = getActualTeamForSlot(mid, 'home', projectedMatches)!;
+                const awayId   = getActualTeamForSlot(mid, 'away', projectedMatches)!;
+                const homeTeam = bracket.teams[homeId];
+                const awayTeam = bracket.teams[awayId];
+                if (!homeTeam || !awayTeam) return null;
+                return (
+                  <SimBracketMatchRow
+                    key={mid}
+                    homeTeam={homeTeam}
+                    awayTeam={awayTeam}
+                    simWinner={simWinners[mid] ?? null}
+                    onPick={w => onSetWinner(mid, w)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SimBracketMatchRow({
+  homeTeam, awayTeam, simWinner, onPick,
+}: {
+  homeTeam: Team;
+  awayTeam: Team;
+  simWinner: string | null;
+  onPick: (winnerId: string | null) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 bg-white border border-sky-100 rounded-lg px-2 py-1.5">
+      <button
+        onClick={() => onPick(simWinner === homeTeam.id ? null : homeTeam.id)}
+        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors flex-1 justify-center ${
+          simWinner === homeTeam.id
+            ? 'bg-sky-500 text-white'
+            : simWinner
+              ? 'text-slate-300'
+              : 'bg-sky-50 text-slate-600 hover:bg-sky-100'
+        }`}
+      >
+        <span>{homeTeam.flagEmoji}</span>
+        <span className={simWinner && simWinner !== homeTeam.id ? 'line-through' : ''}>{homeTeam.shortName}</span>
+      </button>
+      <span className="text-slate-300 text-[10px] shrink-0">vs</span>
+      <button
+        onClick={() => onPick(simWinner === awayTeam.id ? null : awayTeam.id)}
+        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors flex-1 justify-center ${
+          simWinner === awayTeam.id
+            ? 'bg-rose-500 text-white'
+            : simWinner
+              ? 'text-slate-300'
+              : 'bg-rose-50 text-slate-600 hover:bg-rose-100'
+        }`}
+      >
+        <span>{awayTeam.flagEmoji}</span>
+        <span className={simWinner && simWinner !== awayTeam.id ? 'line-through' : ''}>{awayTeam.shortName}</span>
+      </button>
     </div>
   );
 }

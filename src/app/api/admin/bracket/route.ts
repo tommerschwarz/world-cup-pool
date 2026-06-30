@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminRequest } from '@/lib/admin-auth';
 import { getAdminDb } from '@/lib/firebase-admin';
+import { stageFromMatchId } from '@/lib/scoring';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,8 +46,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'matchId required' }, { status: 400 });
     }
     if (winnerId) {
+      const stage = stageFromMatchId(matchId);
       await db.doc('bracket/config').set(
-        { matches: { [matchId]: { result: { winnerId } } } },
+        { matches: { [matchId]: { result: { winnerId }, ...(stage ? { stage } : {}) } } },
         { merge: true }
       );
     } else {

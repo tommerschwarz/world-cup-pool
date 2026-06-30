@@ -8,7 +8,7 @@ import type {
   Stage,
   Match,
 } from './types';
-import { USA_MATCHES, BRACKET_SOURCES } from './wc2026-data';
+import { USA_MATCHES, BRACKET_SOURCES, BRACKET_ROUNDS } from './wc2026-data';
 
 // ---------------------------------------------------------------------------
 // Scoring constants — imported by the rules page for display
@@ -39,6 +39,22 @@ export const SCORING = {
   TOP3_SECOND_PTS:  8,  // one of your picks finishes 2nd
   TOP3_THIRD_PTS:   4,  // one of your picks finishes 3rd
 } as const;
+
+// ---------------------------------------------------------------------------
+// stageFromMatchId — derives Stage from the match ID string, used as a
+// fallback when Firestore data is missing the stage field (setResult stored
+// only winnerId for R16+ matches).
+// ---------------------------------------------------------------------------
+
+export function stageFromMatchId(matchId: string): Stage | null {
+  if (matchId.startsWith('r32'))   return 'R32';
+  if (matchId.startsWith('r16'))   return 'R16';
+  if (matchId.startsWith('qf'))    return 'QF';
+  if (matchId === 'sf_3rd')        return '3RD';
+  if (matchId.startsWith('sf'))    return 'SF';
+  if (matchId === 'final')         return 'FINAL';
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // calculateScore
@@ -128,8 +144,9 @@ export function calculateScore(
   const knockoutByStage: Record<string, { pts: number; details: Record<string, number> }> = {};
 
   for (const match of Object.values(bracket.matches)) {
-    const stage = match.stage;
-    if (stage === 'GROUP') continue;
+    // match.stage may be undefined for R16+ results (setResult never stored stage)
+    const stage: Stage | undefined = (match.stage as Stage | undefined) ?? stageFromMatchId(match.id) ?? undefined;
+    if (!stage || stage === 'GROUP') continue;
     const ptsPerMatch = SCORING.KNOCKOUT_PER_MATCH[stage];
     if (ptsPerMatch == null || !match.result?.winnerId) continue;
 
@@ -244,14 +261,20 @@ export function calculateMaxScore(predictions: UserPredictions, bracket: Bracket
     if (predictions.usaMatchPredictions?.[match.id] != null) remaining += SCORING.USA_PER_MATCH_PTS;
   }
 
-  // Knockout: undecided matches where the user's picked team is still alive
+  // Knockout: undecided matches where the user's picked team is still alive.
+  // Iterate ALL bracket match IDs (not just Firestore entries) — undecided
+  // R16+/QF/SF/Final matches have no Firestore doc until a result is set.
   const knockoutPreds = predictions.knockoutPredictions ?? {};
-  for (const match of Object.values(matches)) {
-    if (match.stage === 'GROUP' || match.result?.winnerId) continue;
-    const ptsPerMatch = SCORING.KNOCKOUT_PER_MATCH[match.stage];
-    if (!ptsPerMatch) continue;
-    const pick = knockoutPreds[match.id];
-    if (pick && !eliminated.has(pick)) remaining += ptsPerMatch;
+  for (const { matchIds } of BRACKET_ROUNDS) {
+    for (const matchId of matchIds) {
+      if (matches[matchId]?.result?.winnerId) continue; // already decided
+      const stage = stageFromMatchId(matchId);
+      if (!stage) continue;
+      const ptsPerMatch = SCORING.KNOCKOUT_PER_MATCH[stage];
+      if (!ptsPerMatch) continue;
+      const pick = knockoutPreds[matchId];
+      if (pick && !eliminated.has(pick)) remaining += ptsPerMatch;
+    }
   }
 
   // Top 3 (podium picks): greedily assign still-alive picks to undecided positions.
