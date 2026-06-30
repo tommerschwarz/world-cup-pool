@@ -624,6 +624,41 @@ function resolveSlot(matchId: string, slot: 'home' | 'away', picks: Record<strin
   return getWinner(feederId, picks, matches);
 }
 
+// Resolves which team ACTUALLY occupies a slot based solely on real match results
+// (no picks fallback). Returns null if the feeder match hasn't been decided yet.
+function getActualTeamInSlot(matchId: string, slot: 'home' | 'away', matches: Record<string, Match>): string | null {
+  if (matchId.startsWith('r32')) {
+    const m = matches[matchId];
+    return slot === 'home' ? (m?.homeTeamId ?? null) : (m?.awayTeamId ?? null);
+  }
+  const sources = BRACKET_SOURCES[matchId];
+  if (!sources) return null;
+  const [srcA, srcB] = sources;
+  const feederId = slot === 'home' ? srcA : srcB;
+  const feederWinner = matches[feederId]?.result?.winnerId ?? null;
+  if (!feederWinner) return null;
+  if (matchId === 'sf_3rd') {
+    const fHome = getActualTeamInSlot(feederId, 'home', matches);
+    const fAway = getActualTeamInSlot(feederId, 'away', matches);
+    return feederWinner === fHome ? fAway : fHome;
+  }
+  return feederWinner;
+}
+
+// Returns the set of team IDs knocked out in any completed match.
+function getEliminatedTeams(matches: Record<string, Match>): Set<string> {
+  const eliminated = new Set<string>();
+  for (const match of Object.values(matches)) {
+    if (!match.result?.winnerId) continue;
+    const winner = match.result.winnerId;
+    const home = getActualTeamInSlot(match.id, 'home', matches);
+    const away = getActualTeamInSlot(match.id, 'away', matches);
+    if (home && home !== winner) eliminated.add(home);
+    if (away && away !== winner) eliminated.add(away);
+  }
+  return eliminated;
+}
+
 // Resolves which team the user originally intended for a slot, using only their
 // picks (ignoring actual results). Used to display the user's original bracket
 // even after results diverge from their predictions.
@@ -683,6 +718,7 @@ function BracketSection({ bracket, picks, locked, onPickChange }: {
   onPickChange: (matchId: string, winnerId: string, allPicks: Record<string, string>) => void;
 }) {
   const matches = bracket.matches ?? {};
+  const eliminatedTeams = getEliminatedTeams(matches);
 
   return (
     <div className="space-y-8">
@@ -704,10 +740,6 @@ function BracketSection({ bracket, picks, locked, onPickChange }: {
                 const awayPickedId = resolveSlotPicksOnly(mid, 'away', picks, matches);
                 if (!homePickedId && !awayPickedId) return null;
 
-                // What team actually made it to each slot
-                const actualHomeId = resolveSlot(mid, 'home', picks, matches);
-                const actualAwayId = resolveSlot(mid, 'away', picks, matches);
-
                 const actualWinner = matches[mid]?.result?.winnerId ?? null;
                 const userPick     = picks[mid] ?? null;
                 const isActual     = !!actualWinner;
@@ -724,14 +756,10 @@ function BracketSection({ bracket, picks, locked, onPickChange }: {
                     <div className="flex flex-col gap-1.5">
                       {(['home', 'away'] as const).map(slot => {
                         const pickedId = slot === 'home' ? homePickedId : awayPickedId;
-                        const actualId = slot === 'home' ? actualHomeId : actualAwayId;
                         const team     = pickedId ? bracket.teams[pickedId] : null;
 
-                        // A different team actually won the feeder match and took this slot
-                        const wrongTeam = !!(actualId && pickedId && actualId !== pickedId);
-                        // They made it here but lost this match
-                        const lostMatch = !!(actualWinner && pickedId && actualWinner !== pickedId && !wrongTeam);
-                        const isEliminated = wrongTeam || lostMatch;
+                        // Team was knocked out in any completed match (carries through all future rounds)
+                        const isEliminated = pickedId ? eliminatedTeams.has(pickedId) : false;
 
                         const isActualWinner = !!(actualWinner && actualWinner === pickedId);
                         // Did the user pick this team to win this specific match?
