@@ -606,6 +606,7 @@ function getWinner(matchId: string, picks: Record<string, string>, matches: Reco
   return picks[matchId] ?? null;
 }
 
+// Resolves which team is actually in a slot, using real match results where available.
 function resolveSlot(matchId: string, slot: 'home' | 'away', picks: Record<string, string>, matches: Record<string, Match>): string | null {
   // R32 matches have teams stored directly on the match object
   if (matchId.startsWith('r32')) {
@@ -621,6 +622,29 @@ function resolveSlot(matchId: string, slot: 'home' | 'away', picks: Record<strin
     return getLoser(feederId, picks, matches);
   }
   return getWinner(feederId, picks, matches);
+}
+
+// Resolves which team the user originally intended for a slot, using only their
+// picks (ignoring actual results). Used to display the user's original bracket
+// even after results diverge from their predictions.
+function resolveSlotPicksOnly(matchId: string, slot: 'home' | 'away', picks: Record<string, string>, matches: Record<string, Match>): string | null {
+  if (matchId.startsWith('r32')) {
+    const m = matches[matchId];
+    if (!m) return null;
+    return slot === 'home' ? (m.homeTeamId ?? null) : (m.awayTeamId ?? null);
+  }
+  const sources = BRACKET_SOURCES[matchId];
+  if (!sources) return null;
+  const [srcA, srcB] = sources;
+  const feederId = slot === 'home' ? srcA : srcB;
+  if (matchId === 'sf_3rd') {
+    const sfPick = picks[feederId] ?? null;
+    if (!sfPick) return null;
+    const sfHome = resolveSlotPicksOnly(feederId, 'home', picks, matches);
+    const sfAway = resolveSlotPicksOnly(feederId, 'away', picks, matches);
+    return sfPick === sfHome ? sfAway : sfHome;
+  }
+  return picks[feederId] ?? null;
 }
 
 function getLoser(matchId: string, picks: Record<string, string>, matches: Record<string, Match>): string | null {
@@ -664,9 +688,9 @@ function BracketSection({ bracket, picks, locked, onPickChange }: {
     <div className="space-y-8">
       {BRACKET_ROUNDS.map(({ stage, label, matchIds }) => {
         const pickable = matchIds.filter(mid => {
-          const home = resolveSlot(mid, 'home', picks, matches);
-          const away = resolveSlot(mid, 'away', picks, matches);
-          return home || away;
+          const h = resolveSlotPicksOnly(mid, 'home', picks, matches);
+          const a = resolveSlotPicksOnly(mid, 'away', picks, matches);
+          return h || a;
         });
         if (pickable.length === 0) return null;
 
@@ -675,12 +699,17 @@ function BracketSection({ bracket, picks, locked, onPickChange }: {
             <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">{label}</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {matchIds.map(mid => {
-                const home = resolveSlot(mid, 'home', picks, matches);
-                const away = resolveSlot(mid, 'away', picks, matches);
-                if (!home && !away) return null;
+                // What the user originally intended for each slot
+                const homePickedId = resolveSlotPicksOnly(mid, 'home', picks, matches);
+                const awayPickedId = resolveSlotPicksOnly(mid, 'away', picks, matches);
+                if (!homePickedId && !awayPickedId) return null;
+
+                // What team actually made it to each slot
+                const actualHomeId = resolveSlot(mid, 'home', picks, matches);
+                const actualAwayId = resolveSlot(mid, 'away', picks, matches);
+
                 const actualWinner = matches[mid]?.result?.winnerId ?? null;
                 const userPick     = picks[mid] ?? null;
-                const currentWinner = actualWinner ?? userPick;
                 const isActual     = !!actualWinner;
 
                 const handlePick = (teamId: string) => {
@@ -694,26 +723,40 @@ function BracketSection({ bracket, picks, locked, onPickChange }: {
                     {isActual && <p className="text-xs text-slate-400 mb-2">Final result</p>}
                     <div className="flex flex-col gap-1.5">
                       {(['home', 'away'] as const).map(slot => {
-                        const teamId = slot === 'home' ? home : away;
-                        const team   = teamId ? bracket.teams[teamId] : null;
-                        const isPicked = currentWinner === teamId;
+                        const pickedId = slot === 'home' ? homePickedId : awayPickedId;
+                        const actualId = slot === 'home' ? actualHomeId : actualAwayId;
+                        const team     = pickedId ? bracket.teams[pickedId] : null;
+
+                        // A different team actually won the feeder match and took this slot
+                        const wrongTeam = !!(actualId && pickedId && actualId !== pickedId);
+                        // They made it here but lost this match
+                        const lostMatch = !!(actualWinner && pickedId && actualWinner !== pickedId && !wrongTeam);
+                        const isEliminated = wrongTeam || lostMatch;
+
+                        const isActualWinner = !!(actualWinner && actualWinner === pickedId);
+                        const isPicked = !isEliminated && userPick === pickedId;
+
                         return (
                           <button
                             key={slot}
-                            disabled={locked || isActual || !teamId}
-                            onClick={() => teamId && handlePick(teamId)}
+                            disabled={locked || isActual || !pickedId || isEliminated}
+                            onClick={() => pickedId && !isEliminated && handlePick(pickedId)}
                             className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all text-left ${
-                              !teamId
+                              !pickedId
                                 ? 'bg-slate-50 text-slate-300 cursor-default'
-                                : isPicked
-                                  ? isActual
-                                    ? 'bg-green-100 text-green-700 font-semibold'
-                                    : 'bg-sky-500 text-white font-semibold'
-                                  : 'bg-sky-50 text-slate-600 hover:bg-sky-100 disabled:hover:bg-sky-50'
+                                : isActualWinner
+                                  ? 'bg-green-100 text-green-700 font-semibold'
+                                  : isEliminated
+                                    ? 'bg-slate-50 text-slate-400 cursor-default'
+                                    : isPicked
+                                      ? 'bg-sky-500 text-white font-semibold'
+                                      : 'bg-sky-50 text-slate-600 hover:bg-sky-100 disabled:hover:bg-sky-50'
                             }`}
                           >
                             <span className="text-base">{team?.flagEmoji ?? '🏳️'}</span>
-                            <span>{team?.name ?? 'TBD'}</span>
+                            <span className={isEliminated ? 'line-through' : ''}>{team?.name ?? 'TBD'}</span>
+                            {isActualWinner && <span className="ml-auto text-xs">✓</span>}
+                            {isEliminated && <span className="ml-auto text-xs">✗</span>}
                             {isPicked && !isActual && locked && <span className="ml-auto text-xs opacity-70">🔒</span>}
                           </button>
                         );

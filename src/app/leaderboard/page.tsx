@@ -5,7 +5,7 @@ import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { getClientDb } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import { calculateScore, SCORING } from '@/lib/scoring';
+import { calculateScore, calculateMaxScore, SCORING } from '@/lib/scoring';
 import { GROUPS, getGroupTeams, isTournamentLocked, BRACKET_SOURCES, BRACKET_ROUNDS } from '@/lib/wc2026-data';
 import type {
   UserScore, UserPredictions, BracketConfig, Match,
@@ -117,6 +117,14 @@ function StandingsTab({ scores, currentUid, predictions, bracket }: {
   const sorted = [...scores].sort((a, b) => b.total - a.total);
   const champMap = Object.fromEntries(predictions.map(p => [p.uid, p.knockoutPredictions?.final ?? null]));
 
+  // Max possible score per user
+  const maxMap: Record<string, number> = {};
+  if (bracket) {
+    for (const pred of predictions) {
+      maxMap[pred.uid] = calculateMaxScore(pred, bracket);
+    }
+  }
+
   return (
     <div className="bg-white rounded-2xl border border-sky-100 overflow-hidden">
       <table className="w-full text-sm">
@@ -125,12 +133,13 @@ function StandingsTab({ scores, currentUid, predictions, bracket }: {
             <th className="px-4 py-3 w-10">#</th>
             <th className="px-4 py-3">Player</th>
             <th className="px-4 py-3 text-right">Points</th>
+            <th className="px-4 py-3 text-right whitespace-nowrap">Max</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-sky-100/50">
           {sorted.length === 0 && (
             <tr>
-              <td colSpan={3} className="px-4 py-8 text-center text-slate-400">
+              <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
                 No scores yet — check back after matches start.
               </td>
             </tr>
@@ -139,6 +148,7 @@ function StandingsTab({ scores, currentUid, predictions, bracket }: {
             const isMe = s.uid === currentUid;
             const champId = champMap[s.uid];
             const champFlag = champId ? bracket?.teams[champId]?.flagEmoji : null;
+            const maxScore = maxMap[s.uid] ?? null;
             return (
               <tr key={s.uid} className={`transition-colors ${isMe ? 'bg-sky-50' : 'hover:bg-sky-50/60'}`}>
                 <td className="px-4 py-3 text-slate-400 font-mono tabular-nums">{i + 1}</td>
@@ -153,6 +163,9 @@ function StandingsTab({ scores, currentUid, predictions, bracket }: {
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right font-bold font-mono tabular-nums text-slate-800">{s.total}</td>
+                <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-400 text-xs">
+                  {maxScore !== null ? maxScore : '—'}
+                </td>
               </tr>
             );
           })}

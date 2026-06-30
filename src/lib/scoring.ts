@@ -179,6 +179,56 @@ export function calculateScore(
   return { total, breakdown };
 }
 
+// ---------------------------------------------------------------------------
+// calculateMaxScore — current score + max remaining points assuming all
+// remaining picks are correct (optimistic upper bound).
+// ---------------------------------------------------------------------------
+
+export function calculateMaxScore(predictions: UserPredictions, bracket: BracketConfig): number {
+  const { total: current } = calculateScore(predictions, bracket);
+  let remaining = 0;
+
+  // Groups: for any group without a result, user's picks could all be correct
+  const groups = ['A','B','C','D','E','F','G','H','I','J','K','L'];
+  for (const group of groups) {
+    if (bracket.groupResults?.[group]) continue;
+    const pred = predictions.groupPredictions?.[group];
+    if (!pred) continue;
+    remaining += pred.advancingTeamIds.length * SCORING.ADVANCE_PTS;
+    if (pred.topSeedId) remaining += SCORING.TOP_SEED_PTS;
+  }
+
+  // USA: undecided matches with picks
+  const usaResults = bracket.usaMatchResults ?? {};
+  for (const match of USA_MATCHES) {
+    if (usaResults[match.id] != null) continue;
+    if (predictions.usaMatchPredictions?.[match.id] != null) remaining += SCORING.USA_PER_MATCH_PTS;
+  }
+
+  // Knockout: undecided matches with picks
+  const knockoutPreds = predictions.knockoutPredictions ?? {};
+  for (const match of Object.values(bracket.matches ?? {})) {
+    if (match.stage === 'GROUP' || match.result?.winnerId) continue;
+    const ptsPerMatch = SCORING.KNOCKOUT_PER_MATCH[match.stage];
+    if (!ptsPerMatch) continue;
+    if (knockoutPreds[match.id]) remaining += ptsPerMatch;
+  }
+
+  // Top 3: undecided finishing positions
+  const top3 = predictions.topThreePredictions;
+  const userSet = new Set([top3?.pick1, top3?.pick2, top3?.pick3].filter(Boolean) as string[]);
+  if (userSet.size > 0) {
+    const matchList = Object.values(bracket.matches ?? {});
+    const finalMatch = matchList.find(m => m.stage === 'FINAL');
+    const thirdMatch = matchList.find(m => m.stage === '3RD');
+    // Champion + runner-up both determined by final match result
+    if (!finalMatch?.result?.winnerId) remaining += SCORING.TOP3_FIRST_PTS + SCORING.TOP3_SECOND_PTS;
+    if (!thirdMatch?.result?.winnerId) remaining += SCORING.TOP3_THIRD_PTS;
+  }
+
+  return current + remaining;
+}
+
 function toGroupResult(sim: SimulatedGroupResult): GroupResult {
   const standings = [...sim.advancingTeamIds];
   if (sim.topSeedId) {
