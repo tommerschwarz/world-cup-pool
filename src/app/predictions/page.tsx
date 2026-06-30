@@ -734,7 +734,12 @@ function BracketSection({ bracket, picks, locked, onPickChange }: {
                         const isEliminated = wrongTeam || lostMatch;
 
                         const isActualWinner = !!(actualWinner && actualWinner === pickedId);
-                        const isPicked = !isEliminated && userPick === pickedId;
+                        // Did the user pick this team to win this specific match?
+                        const isMyPick = userPick === pickedId;
+                        const isPicked = !isEliminated && isMyPick; // pre-result pick highlight
+
+                        // Wrong pick: user chose this team to win but they didn't
+                        const isWrongPick = isActual && isMyPick && !isActualWinner;
 
                         return (
                           <button
@@ -746,17 +751,21 @@ function BracketSection({ bracket, picks, locked, onPickChange }: {
                                 ? 'bg-slate-50 text-slate-300 cursor-default'
                                 : isActualWinner
                                   ? 'bg-green-100 text-green-700 font-semibold'
-                                  : isEliminated
-                                    ? 'bg-slate-50 text-slate-400 cursor-default'
-                                    : isPicked
-                                      ? 'bg-sky-500 text-white font-semibold'
-                                      : 'bg-sky-50 text-slate-600 hover:bg-sky-100 disabled:hover:bg-sky-50'
+                                  : isWrongPick
+                                    ? 'bg-sky-50 text-slate-400 ring-1 ring-sky-300 cursor-default'
+                                    : isEliminated
+                                      ? 'bg-slate-50 text-slate-400 cursor-default'
+                                      : isPicked
+                                        ? 'bg-sky-500 text-white font-semibold'
+                                        : 'bg-sky-50 text-slate-600 hover:bg-sky-100 disabled:hover:bg-sky-50'
                             }`}
                           >
                             <span className="text-base">{team?.flagEmoji ?? '🏳️'}</span>
-                            <span className={isEliminated ? 'line-through' : ''}>{team?.name ?? 'TBD'}</span>
-                            {isActualWinner && <span className="ml-auto text-xs">✓</span>}
-                            {isEliminated && <span className="ml-auto text-xs">✗</span>}
+                            <span className={isEliminated || isWrongPick ? 'line-through' : ''}>{team?.name ?? 'TBD'}</span>
+                            {isActualWinner && isMyPick  && <span className="ml-auto text-xs font-bold text-green-600">✓ my pick</span>}
+                            {isActualWinner && !isMyPick && <span className="ml-auto text-xs">✓</span>}
+                            {isWrongPick                 && <span className="ml-auto text-xs text-sky-500">my pick ✗</span>}
+                            {isEliminated && !isWrongPick && <span className="ml-auto text-xs">✗</span>}
                             {isPicked && !isActual && locked && <span className="ml-auto text-xs opacity-70">🔒</span>}
                           </button>
                         );
