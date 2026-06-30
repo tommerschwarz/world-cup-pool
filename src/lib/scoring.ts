@@ -6,8 +6,9 @@ import type {
   ScoreBreakdown,
   SimulatedGroupResult,
   Stage,
+  Match,
 } from './types';
-import { USA_MATCHES } from './wc2026-data';
+import { USA_MATCHES, BRACKET_SOURCES } from './wc2026-data';
 
 // ---------------------------------------------------------------------------
 // Scoring constants — imported by the rules page for display
@@ -180,13 +181,51 @@ export function calculateScore(
 }
 
 // ---------------------------------------------------------------------------
-// calculateMaxScore — current score + max remaining points assuming all
-// remaining picks are correct (optimistic upper bound).
+// Bracket helpers — needed to resolve actual teams in later rounds
+// ---------------------------------------------------------------------------
+
+function actualTeamInSlot(matchId: string, slot: 'home' | 'away', matches: Record<string, Match>): string | null {
+  if (matchId.startsWith('r32')) {
+    const m = matches[matchId];
+    return slot === 'home' ? (m?.homeTeamId ?? null) : (m?.awayTeamId ?? null);
+  }
+  const sources = BRACKET_SOURCES[matchId];
+  if (!sources) return null;
+  const [srcA, srcB] = sources;
+  const feederId = slot === 'home' ? srcA : srcB;
+  const feederWinner = matches[feederId]?.result?.winnerId ?? null;
+  if (!feederWinner) return null;
+  if (matchId === 'sf_3rd') {
+    const fHome = actualTeamInSlot(feederId, 'home', matches);
+    const fAway = actualTeamInSlot(feederId, 'away', matches);
+    return feederWinner === fHome ? fAway : fHome;
+  }
+  return feederWinner;
+}
+
+function buildEliminatedSet(matches: Record<string, Match>): Set<string> {
+  const out = new Set<string>();
+  for (const match of Object.values(matches)) {
+    if (!match.result?.winnerId) continue;
+    const winner = match.result.winnerId;
+    const home = actualTeamInSlot(match.id, 'home', matches);
+    const away = actualTeamInSlot(match.id, 'away', matches);
+    if (home && home !== winner) out.add(home);
+    if (away && away !== winner) out.add(away);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// calculateMaxScore — current score + max still-earnable points based on
+// each user's specific picks and which teams are still alive.
 // ---------------------------------------------------------------------------
 
 export function calculateMaxScore(predictions: UserPredictions, bracket: BracketConfig): number {
   const { total: current } = calculateScore(predictions, bracket);
   let remaining = 0;
+  const matches   = bracket.matches ?? {};
+  const eliminated = buildEliminatedSet(matches);
 
   // Groups: for any group without a result, user's picks could all be correct
   const groups = ['A','B','C','D','E','F','G','H','I','J','K','L'];
@@ -198,32 +237,49 @@ export function calculateMaxScore(predictions: UserPredictions, bracket: Bracket
     if (pred.topSeedId) remaining += SCORING.TOP_SEED_PTS;
   }
 
-  // USA: undecided matches with picks
+  // USA: undecided matches with picks (W/D/L outcomes, not team-based)
   const usaResults = bracket.usaMatchResults ?? {};
   for (const match of USA_MATCHES) {
     if (usaResults[match.id] != null) continue;
     if (predictions.usaMatchPredictions?.[match.id] != null) remaining += SCORING.USA_PER_MATCH_PTS;
   }
 
-  // Knockout: undecided matches with picks
+  // Knockout: undecided matches where the user's picked team is still alive
   const knockoutPreds = predictions.knockoutPredictions ?? {};
-  for (const match of Object.values(bracket.matches ?? {})) {
+  for (const match of Object.values(matches)) {
     if (match.stage === 'GROUP' || match.result?.winnerId) continue;
     const ptsPerMatch = SCORING.KNOCKOUT_PER_MATCH[match.stage];
     if (!ptsPerMatch) continue;
-    if (knockoutPreds[match.id]) remaining += ptsPerMatch;
+    const pick = knockoutPreds[match.id];
+    if (pick && !eliminated.has(pick)) remaining += ptsPerMatch;
   }
 
-  // Top 3: undecided finishing positions
+  // Top 3 (podium picks): greedily assign still-alive picks to undecided positions.
+  // A pick only counts if the team isn't eliminated.
+  // Positions: champion (15), runner-up (8), 3rd place (4) — assigned highest-value first.
   const top3 = predictions.topThreePredictions;
-  const userSet = new Set([top3?.pick1, top3?.pick2, top3?.pick3].filter(Boolean) as string[]);
-  if (userSet.size > 0) {
-    const matchList = Object.values(bracket.matches ?? {});
-    const finalMatch = matchList.find(m => m.stage === 'FINAL');
-    const thirdMatch = matchList.find(m => m.stage === '3RD');
-    // Champion + runner-up both determined by final match result
-    if (!finalMatch?.result?.winnerId) remaining += SCORING.TOP3_FIRST_PTS + SCORING.TOP3_SECOND_PTS;
-    if (!thirdMatch?.result?.winnerId) remaining += SCORING.TOP3_THIRD_PTS;
+  const top3Picks = [...new Set([top3?.pick1, top3?.pick2, top3?.pick3].filter(Boolean) as string[])];
+
+  if (top3Picks.length > 0) {
+    const champion   = matches['final']?.result?.winnerId ?? null;
+    const sf1Winner  = matches['sf_01']?.result?.winnerId ?? null;
+    const sf2Winner  = matches['sf_02']?.result?.winnerId ?? null;
+    const runnerUp   = champion
+      ? (champion === sf1Winner ? sf2Winner : champion === sf2Winner ? sf1Winner : null)
+      : null;
+    const thirdPlace = matches['sf_3rd']?.result?.winnerId ?? null;
+
+    // Picks already matched to a decided position can't earn points for undecided ones
+    const usedPicks = new Set<string>();
+    if (champion   && top3Picks.includes(champion))   usedPicks.add(champion);
+    if (runnerUp   && top3Picks.includes(runnerUp))   usedPicks.add(runnerUp);
+    if (thirdPlace && top3Picks.includes(thirdPlace)) usedPicks.add(thirdPlace);
+
+    let available = top3Picks.filter(p => !eliminated.has(p) && !usedPicks.has(p)).length;
+
+    if (!champion   && available > 0) { remaining += SCORING.TOP3_FIRST_PTS;  available--; }
+    if (!runnerUp   && available > 0) { remaining += SCORING.TOP3_SECOND_PTS; available--; }
+    if (!thirdPlace && available > 0) { remaining += SCORING.TOP3_THIRD_PTS;  available--; }
   }
 
   return current + remaining;
