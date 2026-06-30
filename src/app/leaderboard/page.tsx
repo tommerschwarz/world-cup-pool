@@ -238,6 +238,19 @@ function getActualTeamForSlot(matchId: string, slot: 'home' | 'away', matches: R
   return matches[feederId]?.result?.winnerId ?? null;
 }
 
+function getEliminatedTeams(matches: Record<string, Match>): Set<string> {
+  const eliminated = new Set<string>();
+  for (const match of Object.values(matches)) {
+    if (!match.result?.winnerId) continue;
+    const winner = match.result.winnerId;
+    const home = getActualTeamForSlot(match.id, 'home', matches);
+    const away = getActualTeamForSlot(match.id, 'away', matches);
+    if (home && home !== winner) eliminated.add(home);
+    if (away && away !== winner) eliminated.add(away);
+  }
+  return eliminated;
+}
+
 function PickDistBar({ matchId, bracket, predictions }: {
   matchId: string;
   bracket: BracketConfig;
@@ -351,11 +364,17 @@ function FinalistTable({ predictions, scores, bracket }: {
   const scoreMap = Object.fromEntries(scores.map(s => [s.uid, s.total]));
   const sorted = [...predictions].sort((a, b) => (scoreMap[b.uid] ?? 0) - (scoreMap[a.uid] ?? 0));
   const teams = bracket.teams;
+  const eliminated = getEliminatedTeams(bracket.matches ?? {});
 
   const teamCell = (id: string | null | undefined) => {
     if (!id) return <span className="text-slate-300">—</span>;
     const t = teams[id];
-    return <span className="whitespace-nowrap">{t?.flagEmoji} {t?.shortName}</span>;
+    const out = eliminated.has(id);
+    return (
+      <span className={`whitespace-nowrap ${out ? 'line-through text-slate-400' : ''}`}>
+        {t?.flagEmoji} {t?.shortName}
+      </span>
+    );
   };
 
   return (
@@ -409,6 +428,7 @@ function PoolPicksTab({
   const scoreMap = Object.fromEntries(scores.map(s => [s.uid, s.total]));
   const users    = [...predictions].sort((a, b) => (scoreMap[b.uid] ?? 0) - (scoreMap[a.uid] ?? 0));
   const hasKnockout = Object.keys(bracket.matches ?? {}).length > 0;
+  const eliminated  = getEliminatedTeams(bracket.matches ?? {});
 
   const legendSteps = [0, 0.25, 0.5, 0.75, 1];
 
@@ -575,12 +595,13 @@ function PoolPicksTab({
                     const teamId = u.topThreePredictions?.[pickKey];
                     const team   = teamId ? bracket.teams[teamId] : null;
                     const isMe   = u.uid === currentUid;
+                    const out    = !!(teamId && eliminated.has(teamId));
                     return (
                       <td key={u.uid} className={`text-center px-2 py-2${isMe ? ' bg-sky-50/40' : ''}`}>
                         {team ? (
-                          <div className="flex items-center justify-center gap-1 whitespace-nowrap bg-sky-50/70 text-slate-600 rounded px-1.5 py-0.5">
+                          <div className={`flex items-center justify-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 ${out ? 'bg-slate-100 text-slate-400' : 'bg-sky-50/70 text-slate-600'}`}>
                             <span>{team.flagEmoji}</span>
-                            <span>{team.shortName}</span>
+                            <span className={out ? 'line-through' : ''}>{team.shortName}</span>
                           </div>
                         ) : (
                           <span className="text-slate-300">—</span>
